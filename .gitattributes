@@ -1,0 +1,8 @@
+# 统一换行：源码存 LF，检出按平台；批处理必须 CRLF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制
+*.png binary
+*.ico binary
