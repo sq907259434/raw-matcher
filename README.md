@@ -2,32 +2,35 @@
 
 按客户挑出来的 JPG，把对应的 RAW 原片一次性挑出来。
 
-桌面小工具：Windows 出单文件 exe，macOS 出通用版 DMG，都免安装。全部在本机完成，不联网、不上传任何文件。
+桌面小工具：Windows 出单文件 exe，macOS 出通用版 DMG；另有一份纯网页版 HTML，任意系统双击即用。全部在本机完成，不联网、不上传任何文件。
 
 ![界面截图](docs/screenshot.png)
 
 ## 下载
 
-| 平台 | 直链（恒定指向最新版） | 国内加速镜像 |
+| 平台 / 形态 | 直链（恒定指向最新版） | 国内加速镜像 |
 |---|---|---|
 | **Windows 10/11 64 位** · v1.0 · 8.2 MB | **[⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.0-win64.exe)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.0-win64.exe) |
 | **macOS 通用版** · v1.3 · 0.7 MB | **[⬇ dmg](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-1.3-macos-universal.dmg)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-1.3-macos-universal.dmg) |
+| **纯网页版** · 任意系统 · 43 KB | **[⬇ html](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-web.html)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-web.html) |
 
-[发布页](https://github.com/sq907259434/raw-matcher/releases/latest)里有完整的更新说明和两个校验值。国内直连 GitHub 下载容易卡住，用镜像列（同一个文件，已核对 SHA-256）。
+[发布页](https://github.com/sq907259434/raw-matcher/releases/latest)里有完整的更新说明和三个校验值。国内直连 GitHub 下载容易卡住，用镜像列（同一个文件，已核对 SHA-256）。
 
-两个包都没买代码签名证书，第一次打开系统会有安全提示，属正常：
+**网页版不用安装**：把 HTML 存到本机，用 Chrome / Edge 双击打开就能用，Mac / Linux / Windows 都行。功能一致（含同文件夹模式、按文件名和拍摄时间匹配、导出），只是浏览器出于安全不给文件夹的完整路径、复制走文件接口会慢一点。详见[与纯网页版的区别](#与纯网页版的区别)。
+
+两个桌面包都没买代码签名证书，第一次打开系统会有安全提示，属正常：
 
 - Windows：弹「Windows 已保护你的电脑」→「更多信息」→「仍要运行」
 - macOS：若提示「无法验证开发者」→ **右键点 App → 打开 → 再点「打开」**（或到「系统设置 → 隐私与安全性」里点「仍要打开」）
+- 网页版：无签名问题，浏览器可能要确认「允许访问文件夹」，点允许即可
 
 核对完整性用 SHA-256：
 
 ```
 Windows exe  7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
 macOS  dmg   95dfed3fbec1972dc80002460c15b6aeeade698f3e4c46bea619b42f0a54e15c
+网页版 html  ef5ebdb7fd9a764811a85cb757cd80d3011cb79442949e05bff2701ca7aeee36
 ```
-
-不想装任何东西也行，`web/JPG选RAW.html` 双击在浏览器里就能跑，区别见[下文](#与纯网页版的区别)。
 
 ## 它解决什么问题
 
@@ -68,7 +71,7 @@ macOS  dmg   95dfed3fbec1972dc80002460c15b6aeeade698f3e4c46bea619b42f0a54e15c
 
 ## 与纯网页版的区别
 
-仓库里还有一份 `web/JPG选RAW.html`，双击就能在浏览器里打开，不用装任何东西。区别在于：
+网页版从[下载区](#下载)取 `RAWMatcher-web.html`（源码就是仓库里的 `web/JPG选RAW.html`，两者一字不差），双击就能在浏览器里打开，不用装任何东西。区别在于：
 
 | | Windows 桌面版（exe） | 网页版（html） |
 |---|---|---|
@@ -125,6 +128,7 @@ Edge --app 窗口 (ui.html)  ←→  本地 HTTP 服务 (127.0.0.1，随机端�
 - 拖放要落在界面上半部分的接收区；落在按钮那一带会提示往上拖一点。
 - RAW 只按扩展名识别（CR3 / CR2 / NEF / ARW / RAF / ORF / RW2 / DNG / PEF / SRW 等 20 多种），不做解码，因此不需要装相机厂商的编解码器。
 - 匹配按文件名和拍摄时间，不做图像内容比对。
+- 网页版的一键复制需要 Chrome / Edge；其他浏览器会给出「复制脚本」作为兜底。
 
 ## 项目结构
 
