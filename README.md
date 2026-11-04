@@ -2,27 +2,32 @@
 
 按客户挑出来的 JPG，把对应的 RAW 原片一次性挑出来。
 
-Windows 桌面小工具，单文件 exe，免安装。全部在本机完成，不联网、不上传任何文件。
+桌面小工具：Windows 出单文件 exe，macOS 出通用版 DMG，都免安装。全部在本机完成，不联网、不上传任何文件。
 
 ![界面截图](docs/screenshot.png)
 
 ## 下载
 
-| 线路 | 链接 |
-|---|---|
-| 发布页（推荐，有更新说明和校验值） | [releases/latest](https://github.com/sq907259434/raw-matcher/releases/latest) |
-| 直链 · 恒定指向最新版 | **[⬇ RAWMatcher-v1.0-win64.exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.0-win64.exe)** |
-| 国内加速（GitHub 直连慢时用这条） | [镜像直链](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.0-win64.exe) |
+| 平台 | 直链（恒定指向最新版） | 国内加速镜像 |
+|---|---|---|
+| **Windows 10/11 64 位** · v1.0 · 8.2 MB | **[⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.0-win64.exe)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.0-win64.exe) |
+| **macOS 通用版** · v1.3 · 0.7 MB | **[⬇ dmg](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-1.3-macos-universal.dmg)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-1.3-macos-universal.dmg) |
 
-8.2 MB ｜ Windows 10 / 11（64 位）｜ 免安装，双击即用。
+[发布页](https://github.com/sq907259434/raw-matcher/releases/latest)里有完整的更新说明和两个校验值。国内直连 GitHub 下载容易卡住，用镜像列（同一个文件，已核对 SHA-256）。
 
-因为没有买代码签名证书，第一次打开 Windows 会弹「Windows 已保护你的电脑」，点 **「更多信息」→「仍要运行」** 即可（只需一次）。想核对文件完整性，SHA-256：
+两个包都没买代码签名证书，第一次打开系统会有安全提示，属正常：
+
+- Windows：弹「Windows 已保护你的电脑」→「更多信息」→「仍要运行」
+- macOS：若提示「无法验证开发者」→ **右键点 App → 打开 → 再点「打开」**（或到「系统设置 → 隐私与安全性」里点「仍要打开」）
+
+核对完整性用 SHA-256：
 
 ```
-7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
+Windows exe  7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
+macOS  dmg   95dfed3fbec1972dc80002460c15b6aeeade698f3e4c46bea619b42f0a54e15c
 ```
 
-不想下 exe 也行，`web/JPG选RAW.html` 双击在浏览器里就能跑，区别见[下文](#与纯网页版的区别)。
+不想装任何东西也行，`web/JPG选RAW.html` 双击在浏览器里就能跑，区别见[下文](#与纯网页版的区别)。
 
 ## 它解决什么问题
 
@@ -65,7 +70,7 @@ Windows 桌面小工具，单文件 exe，免安装。全部在本机完成，�
 
 仓库里还有一份 `web/JPG选RAW.html`，双击就能在浏览器里打开，不用装任何东西。区别在于：
 
-| | 桌面版（exe） | 网页版（html） |
+| | Windows 桌面版（exe） | 网页版（html） |
 |---|---|---|
 | 拿到文件夹真实路径 | ✅ 系统直接给 | ❌ 浏览器出于安全不给 |
 | 显示的内容 | 完整路径，可核对 | 只有文件夹名字 |
@@ -74,7 +79,9 @@ Windows 桌面小工具，单文件 exe，免安装。全部在本机完成，�
 
 需要速度、需要确认「动的到底是哪一份拷贝」，用桌面版。
 
-## 自己打包
+**macOS 版**是作者另外打包的通用版 DMG，版本线独立编号（1.3），源码不在本仓库，只在 Release 提供成品。
+
+## 自己打包（Windows 桌面端）
 
 需要 Windows + Python 3.8 以上。
 
@@ -92,7 +99,7 @@ python -m PyInstaller --onefile --noconsole ^
   --add-data "ui.html;." app.py
 ```
 
-## 原理
+## 原理（Windows 桌面端）
 
 浏览器内核不会把拖入文件夹的绝对路径交给网页，这是硬限制。所以路径必须由 Windows 原生通道拿：
 
@@ -114,7 +121,7 @@ Edge --app 窗口 (ui.html)  ←→  本地 HTTP 服务 (127.0.0.1，随机端�
 
 ## 已知限制
 
-- 只支持 Windows（用到了 Win32 拖放与分层窗口）。
+- **本仓库的源码只覆盖 Windows 桌面端**（用到了 Win32 拖放与分层窗口）和纯网页版；macOS 通用版以成品 DMG 形式在 Release 提供，源码不在仓库内。
 - 拖放要落在界面上半部分的接收区；落在按钮那一带会提示往上拖一点。
 - RAW 只按扩展名识别（CR3 / CR2 / NEF / ARW / RAF / ORF / RW2 / DNG / PEF / SRW 等 20 多种），不做解码，因此不需要装相机厂商的编解码器。
 - 匹配按文件名和拍摄时间，不做图像内容比对。
@@ -122,7 +129,7 @@ Edge --app 窗口 (ui.html)  ←→  本地 HTTP 服务 (127.0.0.1，随机端�
 ## 项目结构
 
 ```
-windows/            桌面版
+windows/            Windows 桌面版（macOS 版只在 Release 提供成品 DMG）
   app.py            本地服务 + 窗口启动 + 扫描/匹配/复制
   droptarget.py     Win32 原生拖拽层（分层透明窗口）
   ui.html           界面（与网页版同源）
