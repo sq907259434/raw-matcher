@@ -6,6 +6,24 @@ Windows 桌面小工具，单文件 exe，免安装。全部在本机完成，�
 
 ![界面截图](docs/screenshot.png)
 
+## 下载
+
+| 线路 | 链接 |
+|---|---|
+| 发布页（推荐，有更新说明和校验值） | [releases/latest](https://github.com/sq907259434/raw-matcher/releases/latest) |
+| 直链 · 恒定指向最新版 | **[⬇ RAWMatcher-v1.0-win64.exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.0-win64.exe)** |
+| 国内加速（GitHub 直连慢时用这条） | [镜像直链](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.0-win64.exe) |
+
+8.2 MB ｜ Windows 10 / 11（64 位）｜ 免安装，双击即用。
+
+因为没有买代码签名证书，第一次打开 Windows 会弹「Windows 已保护你的电脑」，点 **「更多信息」→「仍要运行」** 即可（只需一次）。想核对文件完整性，SHA-256：
+
+```
+7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
+```
+
+不想下 exe 也行，`web/JPG选RAW.html` 双击在浏览器里就能跑，区别见[下文](#与纯网页版的区别)。
+
 ## 它解决什么问题
 
 拍完一场，客户在 JPG 里挑了几十张，你需要把对应的 CR3 / ARW / NEF 原片交出去。手工在几千个原片里一张张找，又慢又容易漏。
