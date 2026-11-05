@@ -45,6 +45,14 @@ _CopyFileW = _k32.CopyFileW
 _CopyFileW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.BOOL)
 _CopyFileW.restype = wintypes.BOOL
 
+# 判断临时浏览器配置目录是否还被另一个正在运行的实例占用
+_OpenProcess = _k32.OpenProcess
+_OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+_OpenProcess.restype = wintypes.HANDLE
+_CloseHandle = _k32.CloseHandle
+_CloseHandle.argtypes = (wintypes.HANDLE,)
+_CloseHandle.restype = wintypes.BOOL
+
 
 class _BROWSEINFOW(ctypes.Structure):
     _fields_ = [
@@ -900,13 +908,35 @@ def find_browser():
     return None
 
 
+def _pid_alive(pid):
+    try:
+        h = _OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        _CloseHandle(h)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def cleanup_profiles(keep=None):
-    """清掉历史遗留的浏览器临时配置目录，避免 temp 里越积越多。"""
+    """清掉历史遗留的浏览器临时配置目录，但保留其他活实例正在用的目录。
+
+    多开时若按旧逻辑一律删光，后启动的实例会把先启动实例的 profile 删掉，
+    先开的窗口可能直接崩（2026-11-05 修多开时一并处理）。
+    """
     tmp = tempfile.gettempdir()
     try:
         for name in os.listdir(tmp):
-            if name.startswith("rawmatcher_profile_") and name != keep:
-                shutil.rmtree(os.path.join(tmp, name), ignore_errors=True)
+            if not name.startswith("rawmatcher_profile_") or name == keep:
+                continue
+            try:
+                owner = int(name.rsplit("_", 1)[1])
+                if _pid_alive(owner):
+                    continue
+            except (ValueError, IndexError):
+                pass
+            shutil.rmtree(os.path.join(tmp, name), ignore_errors=True)
     except OSError:
         pass
 
@@ -955,15 +985,17 @@ def main():
 
     port = int(os.environ.get("RAWM_PORT") or DEFAULT_PORT)
     if port_in_use(port) and not os.environ.get("RAWM_PORT"):
-        # 已经开着一个，直接把窗口叫出来
-        open_window("http://127.0.0.1:%d/?v=%d" % (port, int(time.time())))
-        return
+        # 已有实例占着 47311：绝不能只 open_window 就 return。
+        # 那样新窗口连的是旧服务（旧页面），而且 droptarget.start() 在下面被跳过，
+        # 窗口没有原生拖拽层 —— 拖进去一个文件夹都认不到（2026-11-05 实测根因）。
+        # 改为让系统分配一个空闲端口，起一套完整独立的 服务 + 窗口 + 拖拽层。
+        port = 0
 
     try:
         httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     except OSError:
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        port = httpd.server_address[1]
+    port = httpd.server_address[1]
     httpd.daemon_threads = True
 
     threading.Thread(target=httpd.serve_forever, daemon=True).start()

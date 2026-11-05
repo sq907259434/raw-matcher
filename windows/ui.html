@@ -121,6 +121,24 @@ label.it{cursor:pointer}
 .candbtn:disabled{opacity:.7;cursor:default;background:#fbf6ec}
 .dropfix{font-size:12px;margin:-8px 0 14px}
 .dropfix a{color:var(--accent);cursor:pointer;text-decoration:underline}
+
+.b-image{background:#e6f4f1;color:#0f6e56}
+.b-image.bad{background:#fde8e8;color:#b42318}
+.pics{display:flex;gap:8px;margin:6px 0 2px;align-items:flex-start;flex-wrap:wrap}
+body.no-thumbs .pics{display:none}
+.pic{margin:0;width:112px}
+.pic img{display:block;width:112px;height:84px;object-fit:contain;background:#f5f1ea;border:1px solid #e6dfd3;border-radius:8px;cursor:zoom-in;image-orientation:none}
+.pic img.big{width:240px;height:180px}
+.pic figcaption{font-size:11px;color:#8a8378;margin-top:2px}
+.fixsel{margin-top:6px;max-width:100%;font-family:inherit;font-size:12px;padding:4px 6px;border:1px solid #e6dfd3;border-radius:8px;background:#fff;color:inherit}
+/* 结果区头部：与「全选」并列，只切 CSS 不下发到拖拽透明层 */
+.ph .thumbsw{font-size:12px;color:var(--mute);display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:400;user-select:none}
+.ph .thumbsw input{cursor:pointer;margin:0}
+/* 名字一致但画面不符：单独置顶一块，只改显示顺序，不改勾选与匹配结果 */
+.b-conflict{background:#fde8e8;color:#b42318}
+.grp{font-size:11px;color:var(--mute);padding:9px 4px 5px;letter-spacing:.02em}
+.grp.danger{color:#b42318;font-weight:700}
+.grp.warn{color:#a35a00}
 </style>
 </head>
 <body>
@@ -159,6 +177,8 @@ label.it{cursor:pointer}
         <label><input type="checkbox" id="m-name" checked> 按文件名匹配</label>
         <label><input type="checkbox" id="m-contain" checked> JPG 改过名也尝试（名字里包含 RAW 编号）</label>
         <label><input type="checkbox" id="m-time" checked> 按拍摄时间匹配</label>
+        <label><input type="checkbox" id="m-image" checked> 画面对照（用 RAW 内嵌预览核对，改名 / 旋转过也能找回）</label>
+
         <label><input type="checkbox" id="recursive" checked> 包含子文件夹</label>
       </div>
       <div class="grid">
@@ -173,6 +193,12 @@ label.it{cursor:pointer}
           <div class="hint">两台相机时间不一致时填。比较时用：JPG 时间 + 偏移 ≈ RAW 时间。</div>
         </div>
       </div>
+      <div class="field" style="margin-top:10px">
+        <label>画面差异阈值（默认 40，越小越严）</label>
+        <input type="number" id="img-tol" value="40" min="0" max="256" step="1">
+        <div class="hint">两张图的指纹差异超过这个值就标「需确认」。大幅裁切、倾斜时算法可能认不出，请点开缩略图人工核对，或用下面的「改配」手动指定。缩略图关掉时，在结果区顶部勾回「显示缩略图」即可，不用重新匹配。</div>
+      </div>
+
     </details>
     <div class="actions">
       <button class="btn dark" id="startBtn">开始匹配</button>
@@ -189,7 +215,7 @@ label.it{cursor:pointer}
     <div class="banner" id="rawNoTimeBanner" hidden></div>
     <div class="panels">
       <div class="panel">
-        <div class="ph"><div class="l"><b>匹配成功</b><label class="all"><input type="checkbox" id="checkAll"> 全选</label></div><span class="cnt" id="cntOk">0</span></div>
+        <div class="ph"><div class="l"><b>匹配成功</b><label class="all"><input type="checkbox" id="checkAll"> 全选</label><label class="thumbsw" title="关掉只是不显示缩略图；画面找回与校验照常跑。随时勾回即出图，不用重新匹配"><input type="checkbox" id="m-thumbs" checked> 显示缩略图</label></div><span class="cnt" id="cntOk">0</span></div>
         <div class="pb" id="listOk"><div class="empty">暂无匹配文件</div></div>
       </div>
       <div class="panel">
@@ -469,6 +495,302 @@ function fmtSec(ms){
   return (s<0?'-':'+')+t+' 秒';
 }
 
+
+/* ---------- 图片对照：RAW 内嵌 JPEG 预览 vs JPG 画面 ----------
+   RAW 文件头部本来就有相机生成的 JPEG 预览，不需要解码 RAW、不需要装依赖。
+   两张图统一用 imageOrientation:'none' 解码，避免 EXIF 方向标记只把一侧转 90 度。
+   本模块自包含；关掉「画面对照」开关后，页面行为与旧版完全一致。 */
+const IMG = (function () {
+  const CFG = { rawSteps: [524288, 2 * 1024 * 1024, 8 * 1024 * 1024], readCap: 8 * 1024 * 1024, W: 17, H: 16, defTh: 40, NMODE: 8 };
+  // D4 完整 8 种（4 旋转 x 2 镜像）。只做 6 种会漏掉「旋转 90 + 翻转」，
+  // 浏览器对带 EXIF 方向的 JPG 解码后恰好常落在这两种里（headless 实测 3/4 找不到）。
+  const MODE_NAME = ['原方向', '左右翻转', '上下翻转', '转 180', '转 90 A', '转 90 B', '斜向翻转 A', '斜向翻转 B'];
+
+  function on() { const e = document.getElementById('m-image'); return !e || e.checked; }
+  function th() {
+    const e = document.getElementById('img-tol');
+    const v = e ? parseInt(e.value, 10) : CFG.defTh;
+    return (isNaN(v) || v < 0) ? CFG.defTh : Math.min(256, v);
+  }
+  function esc2(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+    });
+  }
+  function ham(a, b) { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; }
+
+  async function decode(blob) {
+    try { return await createImageBitmap(blob, { imageOrientation: 'none' }); }
+    catch (e) { return await createImageBitmap(blob); }
+  }
+  function jpegSegments(u8) {
+    const out = [], n = u8.length;
+    let i = 0;
+    while (i + 3 < n) {
+      if (u8[i] === 0xff && u8[i + 1] === 0xd8 && u8[i + 2] === 0xff) {
+        let j = i + 3, end = -1;
+        while (j + 1 < n) {
+          if (u8[j] === 0xff && u8[j + 1] === 0xd9) { end = j + 2; break; }
+          j++;
+        }
+        if (end > 0) { out.push(u8.subarray(i, end)); i = end; continue; }
+        break;
+      }
+      i++;
+    }
+    return out;
+  }
+  async function readAll(f, cap) {
+    const size = f.size || 0, parts = [];
+    for (let off = 0; off < size; off += cap) {
+      const a = await f.slice(off, Math.min(off + cap, size)).arrayBuffer();
+      parts.push(new Uint8Array(a));
+    }
+    let total = 0; for (const p of parts) total += p.length;
+    const all = new Uint8Array(total); let o = 0;
+    for (const p of parts) { all.set(p, o); o += p.length; }
+    return all;
+  }
+  function xform(x, bmp, mode, W, H, w, h) {
+    x.save(); x.translate(W / 2, H / 2);
+    if (mode === 1) x.scale(-1, 1);
+    else if (mode === 2) x.scale(1, -1);
+    else if (mode === 3) x.scale(-1, -1);
+    else if (mode === 4 || mode === 6) { x.rotate(-Math.PI / 2); if (mode === 6) x.scale(-1, 1); }
+    else if (mode === 5 || mode === 7) { x.rotate(Math.PI / 2); if (mode === 7) x.scale(-1, 1); }
+    // 旋转由画布变换负责，绘制尺寸永远是原图方向的 w x h；
+    // 再交换一次尺寸会把画面压扁（这是第一版实现里的 bug）。
+    x.drawImage(bmp, -w / 2, -h / 2, w, h);
+    x.restore();
+  }
+  function drawHash(bmp, mode) {
+    const W = CFG.W, H = CFG.H;
+    const swap = mode >= 4;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.fillStyle = '#808080'; x.fillRect(0, 0, W, H);
+    // 转 90 度时先画成 H x W 再旋转，铺满后的画布正好是 W x H，
+    // 与 Python 基准「先 transpose 再 resize 到 17x16」等价。
+    xform(x, bmp, mode, W, H, swap ? H : W, swap ? W : H);
+    const d = x.getImageData(0, 0, W, H).data;
+    const g = new Float32Array(W * H);
+    for (let i = 0; i < W * H; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    const bits = new Uint8Array(16 * 16);
+    for (let y = 0; y < 16; y++) for (let xx = 0; xx < 16; xx++)
+      bits[y * 16 + xx] = g[y * 17 + xx] > g[y * 17 + xx + 1] ? 1 : 0;
+    return bits;
+  }
+  function drawThumb(bmp, mode) {
+    const mw = 240, mh = 180;
+    const c = document.createElement('canvas'); c.width = mw; c.height = mh;
+    const x = c.getContext('2d');
+    x.fillStyle = '#f5f1ea'; x.fillRect(0, 0, mw, mh);
+    const swap = mode >= 4;
+    const k = Math.min(mw / (swap ? bmp.height : bmp.width), mh / (swap ? bmp.width : bmp.height));
+    const w = bmp.width * k, h = bmp.height * k;
+    xform(x, bmp, mode, mw, mh, w, h);
+    return c.toDataURL('image/jpeg', 0.65);
+  }
+  async function findPreview(u8) {
+    let best = null, area = 0;
+    for (const s of jpegSegments(u8)) {
+      let bmp;
+      try { bmp = await decode(new Blob([s], { type: 'image/jpeg' })); }
+      catch (e) { continue; }
+      // 取中等尺寸的最大预览（相机直出的全尺寸预览可达 8192x5464，解码太慢且不需要）
+      const a = bmp.width * bmp.height;
+      if (a > area && bmp.width >= 160 && bmp.height >= 120
+          && bmp.width <= 2048 && bmp.height <= 2048) {
+        if (best && best.close) best.close();
+        best = bmp; area = a;
+      } else if (bmp.close) bmp.close();
+    }
+    return best;
+  }
+  async function rawInfo(item) {
+    const f = await getFile(item);
+    // 多数机型预览在前 512KB；找不到就逐级扩到 2MB / 8MB（NEF、ARW 等更靠后）
+    let best = null;
+    for (const n of CFG.rawSteps) {
+      const u8 = new Uint8Array(await f.slice(0, n).arrayBuffer());
+      best = await findPreview(u8);
+      if (best) break;
+      if (u8.length < n) break;
+    }
+    if (!best) return null;
+    const hash = drawHash(best, 0), pic = drawThumb(best, 0);
+    if (best.close) best.close();
+    return { hash: hash, pic: pic };
+  }
+  async function jpgInfo(item) {
+    const f = await getFile(item);
+    // 网页版拿到的是真 File/Blob，交给浏览器自己解码，不必把整个文件读进内存；
+    // 桌面版是 /api/head 包装出来的伪 File，只能分块读成 Blob。
+    let bmp;
+    if (typeof Blob !== 'undefined' && f instanceof Blob) {
+      bmp = await decode(f);
+    } else {
+      const u8 = await readAll(f, CFG.readCap);
+      bmp = await decode(new Blob([u8], { type: 'image/jpeg' }));
+    }
+    const hashes = [], pics = [];
+    for (let m = 0; m < CFG.NMODE; m++) { hashes.push(drawHash(bmp, m)); pics.push(drawThumb(bmp, m)); }
+    if (bmp.close) bmp.close();
+    return { hashes: hashes, pics: pics };
+  }
+
+  async function enhance(results, raws) {
+    if (!on()) return;
+    const T = th();
+    let done = 0;
+    setProg('抽取 RAW 内嵌预览…', 92);
+    await pool(raws, 4, async function (r) {
+      try { r._img = await rawInfo(r); } catch (e) { r._img = null; }
+      done++;
+      if (done % 10 === 0 || done === raws.length)
+        setProg('抽取 RAW 内嵌预览 ' + done + '/' + raws.length, 92);
+    });
+    done = 0;
+    await pool(results, 4, async function (it) {
+      try { it._j = await jpgInfo(it.jpg); } catch (e) { it._j = null; }
+      done++;
+      if (done % 10 === 0 || done === results.length)
+        setProg('分析 JPG 画面 ' + done + '/' + results.length, 95);
+    });
+    for (const it of results) {
+      if (!it._j) continue;
+      const row = [];
+      for (const r of raws) {
+        if (!r._img) continue;
+        let d = 256, m = 0;
+        for (let k = 0; k < CFG.NMODE; k++) {
+          const x = ham(it._j.hashes[k], r._img.hash);
+          if (x < d) { d = x; m = k; }
+        }
+        row.push({ r: r, d: d, m: m });
+      }
+      row.sort(function (a, b) { return a.d - b.d; });
+      it._cands = row.slice(0, 12);
+    }
+    // 第 4 步：画面找回（只补空缺，全局一对一，一个 RAW 只给一张 JPG）
+    const used = new Set(results.filter(r => r.raw).map(r => r.raw));
+    const pairs = [];
+    for (const it of results) {
+      if (it.raw || !it._cands) continue;
+      for (const c of it._cands) if (c.d <= T && !used.has(c.r)) pairs.push({ it: it, c: c });
+    }
+    pairs.sort(function (a, b) { return a.c.d - b.c.d; });
+    for (const p of pairs) {
+      if (p.it.raw || used.has(p.c.r)) continue;
+      p.it.raw = p.c.r; p.it.method = 'image'; used.add(p.c.r);
+    }
+    // 第 5 步：全部已匹配行做画面校验（只标记，不自动剔除）
+    for (const it of results) {
+      if (!it.raw) continue;
+      let best = it._cands ? it._cands.find(c => c.r === it.raw) : null;
+      if (!best && it.raw._img && it._j) {
+        let d = 256, m = 0;
+        for (let k = 0; k < CFG.NMODE; k++) {
+          const x = ham(it._j.hashes[k], it.raw._img.hash);
+          if (x < d) { d = x; m = k; }
+        }
+        best = { d: d, m: m };
+      }
+      it.imgDist = best ? best.d : null;
+      it.imgMode = best ? best.m : 0;
+      it.jpgPic = it._j ? it._j.pics[it.imgMode || 0] : null;
+      it.rawPic = it.raw._img ? it.raw._img.pic : null;
+      if (best && best.d > T) {
+        it.level = 'warn';
+        it.note += (it.note ? '；' : '') + '画面与 RAW 预览对不上（距离 ' + best.d + '），请看图确认';
+      } else if (it.method === 'image') {
+        it.note += (it.note ? '；' : '') + '按画面找回（距离 ' + (best ? best.d : '?') + '）';
+      }
+      if (it.method !== 'image' && best && best.m) {
+        it.note += (it.note ? '；' : '') + '画面已自动对齐（' + MODE_NAME[best.m] + '）';
+      }
+    }
+    for (const it of results) if (!it.jpgPic && it._j) it.jpgPic = it._j.pics[0];
+  }
+
+  function pics(r) {
+    if (!r.jpgPic && !r.rawPic) return '';
+    function one(url, label) {
+      if (!url) return '';
+      return '<figure class="pic"><img class="pth" src="' + url + '" alt="' + label
+        + '"><figcaption>' + label + '</figcaption></figure>';
+    }
+    return '<div class="pics">' + one(r.jpgPic, 'JPG') + one(r.rawPic, 'RAW 预览') + '</div>';
+  }
+  function meta(r) {
+    if (r.imgDist == null) return '';
+    const bad = r.imgDist > th();
+    return ' <span class="b b-image' + (bad ? ' bad' : '') + '">画面'
+      + (bad ? '不符 ' : '一致 ') + r.imgDist + '</span>';
+  }
+  function fix(r, i) {
+    if (!r._cands || !r._cands.length) return '';
+    let s = '<select class="fixsel" data-i="' + i + '" title="手动改配这张 JPG 对应的 RAW">';
+    s += '<option value="-1">改配…</option>';
+    r._cands.forEach(function (c, k) {
+      s += '<option value="' + k + '"' + (c.r === r.raw ? ' selected' : '') + '>'
+        + esc2(c.r.name) + '（' + c.d + '）</option>';
+    });
+    return s + '</select>';
+  }
+  function bind() {
+    ['listOk', 'listBad'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('click', function (e) {
+        const t = e.target;
+        if (t.closest && t.closest('.pics')) {
+          // 缩略图在 <label> 里：stopPropagation 挡不住 label 的默认激活行为，
+          // 只点一下放大图就会把这行的勾选反转，必须同时 preventDefault（headless 实测）。
+          e.preventDefault();
+          e.stopPropagation();
+          if (t.classList && t.classList.contains('pth')) t.classList.toggle('big');
+        }
+        // select 不能 stopPropagation：捕获阶段断掉事件会导致原生下拉打不开。
+        // HTML 规范里 select 属于 interactive content，点它不会触发 label 的勾选。
+      }, true);
+    });
+    // 「显示缩略图」只切 CSS，不重跑匹配、不重渲染；随时开随时出图。
+    // 关掉的只是显示，画面找回 / 校验 / 距离数字 / 改配下拉都照常工作。
+    const sw = document.getElementById('m-thumbs');
+    if (sw) {
+      const syncThumbs = function () { document.body.classList.toggle('no-thumbs', !sw.checked); };
+      sw.addEventListener('change', syncThumbs);
+      syncThumbs();
+    }
+    ['listOk', 'listBad'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', function (e) {
+        const s = e.target;
+        if (s.tagName !== 'SELECT' || !s.classList.contains('fixsel')) return;
+        const i = parseInt(s.getAttribute('data-i'), 10), k = parseInt(s.value, 10);
+        const it = state.results[i];
+        if (!it || k < 0 || !it._cands || !it._cands[k]) return;
+        const c = it._cands[k];
+        it.raw = c.r; it.method = 'manual'; it.imgDist = c.d; it.imgMode = c.m;
+        it.jpgPic = it._j ? it._j.pics[c.m] : null;
+        it.rawPic = c.r._img ? c.r._img.pic : null;
+        it.level = ''; it.note = '手动改配（画面距离 ' + c.d + '）';
+        render();
+      }, true);
+    });
+  }
+  bind();
+  // 「名字一致但画面不符」：靠名字配上 + 画面距离超阈值 + 仍需确认。
+  // 纯展示判据，不改 include / method / 匹配结果；手动改配后 level 已清空，不会再进这组。
+  function conflict(r) {
+    return !!(r && r.raw && r.level === 'warn' && r.method === 'name'
+      && r.imgDist != null && r.imgDist > th());
+  }
+  return { enhance: enhance, pics: pics, meta: meta, fix: fix, th: th, conflict: conflict };
+})();
+
 /* ---------- 匹配 ---------- */
 async function readRawTimes(list,p0,p1,label){
   const todo=list.filter(x=>x.t===undefined);
@@ -616,6 +938,7 @@ async function startMatch(){
       state.rawNoTime=0;
     }
 
+    try{ await IMG.enhance(results,raws); }catch(e){ console.warn('画面对照跳过：',e); }
     state.results=results;
     state.filter='all';
     setProg('',0);
@@ -631,34 +954,45 @@ async function startMatch(){
 }
 
 /* ---------- 显示结果 ---------- */
-const BADGE={name:'<span class="b b-name">文件名</span>',contain:'<span class="b b-contain">名字包含</span>',time:'<span class="b b-time">拍摄时间</span>'};
+const BADGE={name:'<span class="b b-name">文件名</span>',contain:'<span class="b b-contain">名字包含</span>',time:'<span class="b b-time">拍摄时间</span>',image:'<span class="b b-image">画面</span>',manual:'<span class="b b-image">手动改配</span>'};
 function okItem(r,i){
   return '<label class="it'+(r.level==='warn'?' warn':'')+'"><input type="checkbox" data-i="'+i+'"'+(r.include?' checked':'')+'>'
     +'<div class="tx"><div class="nm" title="'+esc(r.raw.path)+'">'+esc(r.jpg.name)+' <span class="ar">→</span> '+esc(r.raw.name)+'</div>'
-    +'<div class="meta">'+BADGE[r.method]
+    +IMG.pics(r)
+    +'<div class="meta">'+(BADGE[r.method]||'')
+    +IMG.meta(r)
     +(r.diff!=null?' <span>'+fmtSec(r.diff)+'</span>':'')
-    +(r.level==='warn'?' <span class="b b-warn">需确认</span>':'')
-    +(r.note?' <span>'+esc(r.note)+'</span>':'')+'</div></div></label>';
+    +(IMG.conflict(r)?' <span class="b b-conflict">名字一致·画面不符</span>':(r.level==='warn'?' <span class="b b-warn">需确认</span>':''))
+    +(r.note?' <span>'+esc(r.note)+'</span>':'')+'</div>'+IMG.fix(r,i)+'</div></label>';
 }
-function badItem(r){
-  return '<div class="it bad"><div class="tx"><div class="nm" title="'+esc(r.jpg.path)+'">'+esc(r.jpg.name)+'</div>'
-    +'<div class="meta"><span>'+esc(r.note||'没有找到对应的 RAW')+'</span></div></div></div>';
+function badItem(r,i){
+  return '<div class="it bad"><div class="tx">'+IMG.pics(r)+'<div class="nm" title="'+esc(r.jpg.path)+'">'+esc(r.jpg.name)+'</div>'
+    +'<div class="meta"><span>'+esc(r.note||'没有找到对应的 RAW')+'</span></div>'+IMG.fix(r,i)+'</div></div>';
 }
 function render(){
   const R=state.results;
   const matched=R.filter(r=>r.raw),un=R.filter(r=>!r.raw);
   const warn=matched.filter(r=>r.level==='warn');
   const cnt=m=>matched.filter(r=>r.method===m).length;
+  const cfl=matched.filter(IMG.conflict).length;
+  const imgcnt=R.filter(r=>r.imgDist!=null&&r.imgDist<=IMG.th()).length;
   $('cntOk').textContent=matched.length;
   $('cntBad').textContent=un.length;
   $('heroCount').textContent=new Set(matched.map(r=>r.raw)).size;
-  $('resultHint').textContent=R.length?('共 '+R.length+' 张 JPG：文件名 '+cnt('name')+' · 名字包含 '+cnt('contain')+' · 拍摄时间 '+cnt('time')+(warn.length?' · 需确认 '+warn.length:'')):'还没有匹配结果。';
+  $('resultHint').textContent=R.length?('共 '+R.length+' 张 JPG：文件名 '+cnt('name')+' · 名字包含 '+cnt('contain')+' · 拍摄时间 '+cnt('time')+' · 画面找回 '+cnt('image')+' · 画面一致 '+imgcnt+(warn.length?' · 需确认 '+warn.length:'')+(cfl?'（其中名字一致但画面不符 '+cfl+'）':'')):'还没有匹配结果。';
   const nb=$('rawNoTimeBanner');
   if(state.rawNoTime>0){nb.hidden=false;nb.textContent='有 '+state.rawNoTime+' 个 RAW 读不出拍摄时间，这些只能靠文件名匹配。';}else nb.hidden=true;
-  const okW=[],okN=[];
-  R.forEach((r,i)=>{if(r.raw)(r.level==='warn'?okW:okN).push(okItem(r,i));});
-  $('listOk').innerHTML=okW.concat(okN).join('')||'<div class="empty">暂无匹配文件</div>';
-  $('listBad').innerHTML=un.map(badItem).join('')||'<div class="empty">'+(R.length?'全部都找到了 🎉':'暂无缺失项')+'</div>';
+  const cW=[],oW=[],oN=[];
+  R.forEach((r,i)=>{if(!r.raw)return;const h=okItem(r,i);
+    (IMG.conflict(r)?cW:(r.level==='warn'?oW:oN)).push(h);});
+  const grp=(c,t)=>'<div class="grp'+c+'">'+t+'</div>';
+  const html=cW.length
+    ? grp(' danger','名字一致但画面不符 · '+cW.length+' 张（请点开缩略图人工判）')+cW.join('')
+      +(oW.length?grp(' warn','其他需确认 · '+oW.length+' 张')+oW.join(''):'')
+      +(oN.length?grp('','正常 · '+oN.length+' 张')+oN.join(''):'')
+    : oW.concat(oN).join('');
+  $('listOk').innerHTML=html||'<div class="empty">暂无匹配文件</div>';
+  $('listBad').innerHTML=un.map(r=>badItem(r,R.indexOf(r))).join('')||'<div class="empty">'+(R.length?'全部都找到了 🎉':'暂无缺失项')+'</div>';
   $('checkAll').checked=matched.length>0&&matched.every(r=>r.include);
   updateExportCount();
 }
@@ -705,11 +1039,11 @@ function download(name,text,mime){
 }
 const csvCell=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';
 $('csvBtn').onclick=()=>{
-  const head=['JPG文件名','JPG路径','RAW文件名','RAW路径','匹配方式','时间差(秒)','备注'];
+  const head=['JPG文件名','JPG路径','RAW文件名','RAW路径','匹配方式','时间差(秒)','画面距离','画面校验','备注'];
   const lines=[head.map(csvCell).join(',')];
-  const mname={name:'文件名',contain:'名字包含',time:'拍摄时间'};
+  const mname={name:'文件名',contain:'名字包含',time:'拍摄时间',image:'画面',manual:'手动改配'};
   state.results.forEach(r=>{
-    lines.push([r.jpg.name,r.jpg.path,r.raw?r.raw.name:'',r.raw?r.raw.path:'',r.raw?mname[r.method]:'未匹配',r.diff!=null?(r.diff/1000).toFixed(2):'',r.note].map(csvCell).join(','));
+    lines.push([r.jpg.name,r.jpg.path,r.raw?r.raw.name:'',r.raw?r.raw.path:'',r.raw?mname[r.method]:'未匹配',r.diff!=null?(r.diff/1000).toFixed(2):'',r.imgDist!=null?r.imgDist:'',r.imgDist==null?'':(r.imgDist<=IMG.th()?'一致':'不符'),r.note].map(csvCell).join(','));
   });
   download('RAW对照表.csv','\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8');
 };
