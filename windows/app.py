@@ -62,29 +62,184 @@ _GetCursorPos = _user32.GetCursorPos
 _GetCursorPos.argtypes = (ctypes.POINTER(wintypes.POINT),)
 _GetCursorPos.restype = wintypes.BOOL
 
-_DRAG = {"t0": 0.0, "x": 0, "y": 0, "moved": False}
+# 光看「左键按住」不够：在资源管理器里按住文件夹不放、或者在本窗口里拖选文字，
+# 都会让大框乱闪。真正拖放还有两个物理特征：
+#   ① 光标此刻压在本程序自己的窗口上（覆盖住窗口时，光标下是别的程序的窗口）；
+#   ② 按下的起点不在本窗口里（起点在本窗口＝在自己界面上按住的，不是从外面拖入）。
+_user32.WindowFromPoint.argtypes = (wintypes.POINT,)
+_user32.WindowFromPoint.restype = wintypes.HWND
+_user32.GetForegroundWindow.restype = wintypes.HWND
+_user32.GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
+_user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+_user32.GetClassNameW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+_user32.GetClassNameW.restype = ctypes.c_int
+_user32.IsChild.argtypes = (wintypes.HWND, wintypes.HWND)
+_user32.IsChild.restype = wintypes.BOOL
+_user32.GetWindowRect.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.RECT))
+_user32.GetWindowRect.restype = wintypes.BOOL
+_user32.GetWindowLongPtrW.argtypes = (wintypes.HWND, ctypes.c_int)
+_user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+
+_GWL_EXSTYLE = -20
+_WS_EX_LAYERED = 0x00080000
+_WS_EX_TOPMOST = 0x00000008
+
+_DRAG = {"t0": 0.0, "x": 0, "y": 0, "moved": False, "moving_t": 0.0, "from_inside": False}
+
+# 系统拖放时压在光标下面的「拖动图标」窗口，不能当成「光标不在本窗口」
+_DRAG_IMAGE_CLASSES = ("SysDragImage",)
+
+
+def _hwnd_pid(hwnd):
+    pid = wintypes.DWORD(0)
+    try:
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    except Exception:  # noqa: BLE001
+        return 0
+    return pid.value
+
+
+def _class_of(hwnd):
+    buf = ctypes.create_unicode_buffer(128)
+    try:
+        n = _user32.GetClassNameW(hwnd, buf, 128)
+    except Exception:  # noqa: BLE001
+        return ""
+    return buf.value if n else ""
+
+
+def _own_windows():
+    """返回 (拖拽层窗口, 它归属的应用窗口)；拖拽层还没起来时返回 (None, None)。"""
+    lay = getattr(droptarget, "_LAYER", None)
+    if lay is None:
+        return None, None
+    hwnd = getattr(lay, "hwnd", None)
+    if not hwnd:
+        return None, None
+    return hwnd, getattr(lay, "parent", None)
+
+
+def _is_drag_image(hwnd):
+    """系统「拖动图标」是个小号、分层、置顶的临时窗口，压在光标附近。
+
+    它挡在光标底下时最顶层窗口不是我们的，但光标其实正落在本窗口上——
+    不能因此判断成「离开了窗口」，否则真拖进来反而不显示。
+    """
+    try:
+        r = wintypes.RECT()
+        if not _user32.GetWindowRect(hwnd, ctypes.byref(r)):
+            return False
+        w, h = r.right - r.left, r.bottom - r.top
+        if w <= 0 or h <= 0 or w > 480 or h > 480:
+            return False
+        ex = _user32.GetWindowLongPtrW(hwnd, _GWL_EXSTYLE)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(ex & _WS_EX_LAYERED) and bool(ex & _WS_EX_TOPMOST)
+
+
+def _inside_layer(pt):
+    """光标是否落在拖拽层覆盖的矩形内（用来兜住拖拽图标那种情况）。"""
+    lay, _ = _own_windows()
+    if not lay:
+        return False
+    try:
+        r = wintypes.RECT()
+        if not _user32.GetWindowRect(lay, ctypes.byref(r)):
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    return r.left <= pt.x < r.right and r.top <= pt.y < r.bottom
+
+
+def cursor_over_own_window(pt):
+    """光标底下最顶层的窗口是不是本程序自己的（拖拽层 / 内嵌浏览器窗口 / 拖动图标）。
+
+    这一条专门治「按住文件夹但根本没拖到窗口上，界面也闪」：
+    光标压在资源管理器或其他程序上时，这里直接返回 False。
+    """
+    lay, parent = _own_windows()
+    try:
+        hwnd = _user32.WindowFromPoint(pt)
+    except Exception:  # noqa: BLE001
+        return True, "unknown"
+    cls = _class_of(hwnd) if hwnd else ""
+    if cls in _DRAG_IMAGE_CLASSES:
+        return True, cls
+    if not hwnd:
+        return False, ""
+    if lay is None:
+        # 拖拽层还没建起来（启动瞬间），不拦，免得功能整体失效
+        return True, cls
+    if hwnd == lay or (parent and hwnd == parent):
+        return True, cls
+    if parent:
+        try:
+            if _user32.IsChild(parent, hwnd):
+                return True, cls
+        except Exception:  # noqa: BLE001
+            pass
+        pid, ppid = _hwnd_pid(hwnd), _hwnd_pid(parent)
+        if pid and ppid and pid == ppid:
+            return True, cls
+    # 类名不认识的小号分层置顶窗口（拖动图标）压在光标下：只要光标在窗口矩形内就算在窗口上
+    if _is_drag_image(hwnd) and _inside_layer(pt):
+        return True, cls or "dragimage"
+    return False, cls
+
+
+def foreground_is_own():
+    """本程序的窗口此刻是不是前台。
+
+    「从资源管理器拖进来」时前台是资源管理器；「在本窗口里按住鼠标拖」时前台是本程序。
+    拿不到就返回 False（宁可放行，别把正常的拖入挡掉）。
+    """
+    _, parent = _own_windows()
+    try:
+        fg = _user32.GetForegroundWindow()
+    except Exception:  # noqa: BLE001
+        return False
+    if not fg or not parent:
+        return False
+    try:
+        if fg == parent or _user32.IsChild(parent, fg):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    pid, ppid = _hwnd_pid(fg), _hwnd_pid(parent)
+    return bool(pid and ppid and pid == ppid)
 
 
 def drag_hover():
     """返回是否正在把外部文件拖进窗口；附带诊断字段便于排障。"""
     down = bool(_GetAsyncKeyState(0x01) & 0x8000)   # VK_LBUTTON
     now = time.time()
+    idle = {"hover": False, "down": False, "moved": False, "elapsed": 0.0,
+            "in_window": False, "under": "", "from_inside": False, "moving": False}
     if not down:
-        _DRAG["t0"] = 0.0
-        _DRAG["moved"] = False
-        return {"hover": False, "down": False, "moved": False, "elapsed": 0.0}
+        _DRAG.update(t0=0.0, moved=False, moving_t=0.0, from_inside=False)
+        return idle
     pt = wintypes.POINT()
     if not _GetCursorPos(ctypes.byref(pt)):
-        return {"hover": False, "down": True, "moved": False, "elapsed": 0.0}
+        return dict(idle, down=True)
+    inside, cls = cursor_over_own_window(pt)
     if not _DRAG["t0"]:
         _DRAG["t0"] = now
         _DRAG["x"], _DRAG["y"] = pt.x, pt.y
         _DRAG["moved"] = False
+        _DRAG["moving_t"] = 0.0
+        _DRAG["from_inside"] = bool(inside and foreground_is_own())   # 起点在本窗口里按下 → 不是从外面拖入
     if abs(pt.x - _DRAG["x"]) + abs(pt.y - _DRAG["y"]) > 8:
         _DRAG["moved"] = True
+        _DRAG["x"], _DRAG["y"] = pt.x, pt.y
+        _DRAG["moving_t"] = now
     elapsed = now - _DRAG["t0"]
-    return {"hover": bool(_DRAG["moved"] and elapsed > 0.18),
-            "down": True, "moved": _DRAG["moved"], "elapsed": round(elapsed, 3)}
+    moving = bool(_DRAG["moving_t"] and now - _DRAG["moving_t"] < 0.45)
+    hover = bool(inside and _DRAG["moved"] and moving and not _DRAG["from_inside"]
+                 and elapsed > 0.18)
+    return {"hover": hover, "down": True, "moved": _DRAG["moved"],
+            "elapsed": round(elapsed, 3), "in_window": inside, "under": cls,
+            "from_inside": bool(_DRAG["from_inside"]), "moving": moving}
 
 
 class _BROWSEINFOW(ctypes.Structure):
