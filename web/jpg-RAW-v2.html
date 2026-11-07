@@ -1,0 +1,1535 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAW 选片匹配工具</title>
+<style>
+:root{
+  --bg:#121417;--bg2:#171a1e;--surf:#1d2025;--surf2:#262a31;--surf3:#30353d;
+  --line:#2b3037;--line2:#3a404a;
+  --ink:#eeebe4;--ink2:#c9c6be;--mute:#8b9099;
+  --accent:#f0a64b;--accent-ink:#1b1204;--accent-soft:rgba(240,166,75,.14);
+  --ok:#5fc7b0;--ok-soft:rgba(95,199,176,.14);
+  --warn:#f2b441;--warn-soft:rgba(242,180,65,.15);
+  --bad:#ef6b5f;--bad-soft:rgba(239,107,95,.16);
+  --info:#7fa8f2;--info-soft:rgba(127,168,242,.15);
+  --min:300px;--hh:58px;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{scroll-padding-top:120px}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 "Segoe UI","Microsoft YaHei UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(900px 420px at 50% -120px,rgba(240,166,75,.10),transparent 70%)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+b{font-weight:650}
+svg{display:block}
+
+/* ---------- 顶栏 ---------- */
+.top{position:sticky;top:0;z-index:40;height:var(--hh);display:flex;align-items:center;gap:20px;padding:0 24px;background:rgba(18,20,23,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:.01em;white-space:nowrap}
+.brand .lg{width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center}
+.steps{display:flex;align-items:center;gap:6px;margin:0 auto}
+.step{display:flex;align-items:center;gap:8px;border:0;background:none;color:var(--mute);padding:6px 12px;border-radius:99px;font-weight:600}
+.step i{font-style:normal;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line2);display:grid;place-items:center;font-size:12px}
+.step.on{color:var(--ink);background:var(--surf2)}
+.step.on i{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.step.done i{border-color:var(--ok);color:var(--ok)}
+.step:disabled{opacity:.45;cursor:default}
+.sep{width:28px;height:1px;background:var(--line2)}
+.top-r{display:flex;align-items:center;gap:12px}
+.tally{display:flex;align-items:baseline;gap:6px;color:var(--mute);font-size:13px;white-space:nowrap}
+.tally b{font-size:22px;color:var(--accent);font-variant-numeric:tabular-nums}
+.icon-btn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line2);background:var(--surf);display:grid;place-items:center;color:var(--ink2)}
+.icon-btn:hover{background:var(--surf2);color:var(--ink)}
+@media(max-width:760px){.step span{display:none}.sep{width:14px}.top{padding:0 14px;gap:10px}.brand b{display:none}}
+
+/* ---------- 通用 ---------- */
+.btn{border:0;border-radius:12px;padding:10px 20px;font-weight:650;background:var(--surf3);color:var(--ink);transition:background .15s,transform .05s}
+.btn:hover{background:#3b414b}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{background:#f6b562}
+.btn.ghost{background:transparent;border:1px solid var(--line2)}
+.btn.ghost:hover{background:var(--surf2)}
+.btn.lg{padding:15px 38px;font-size:16px;border-radius:14px}
+.btn.sm{padding:6px 13px;font-size:13px;border-radius:9px}
+.btn:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+.banner{background:var(--warn-soft);border:1px solid rgba(242,180,65,.35);color:#f4cd7a;border-radius:12px;padding:10px 14px;margin:14px 0;font-size:13.5px}
+.mute{color:var(--mute)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+.bdg{display:inline-flex;align-items:center;gap:4px;border-radius:99px;padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--surf3);color:var(--ink2)}
+.bdg.name{background:var(--ok-soft);color:var(--ok)}
+.bdg.contain{background:var(--info-soft);color:var(--info)}
+.bdg.time{background:var(--accent-soft);color:var(--accent)}
+.bdg.image,.bdg.manual{background:rgba(180,140,240,.16);color:#c3a6f5}
+.bdg.warn{background:var(--warn-soft);color:var(--warn)}
+.bdg.bad{background:var(--bad-soft);color:var(--bad)}
+.bdg.good{background:var(--ok-soft);color:var(--ok)}
+
+/* ---------- 第 1 步：选择 ---------- */
+#viewSetup{padding-top:44px;padding-bottom:70px}
+.setup-head{text-align:center;margin-bottom:26px}
+.setup-head h1{font-size:34px;line-height:1.25;margin:0 0 10px;letter-spacing:-.01em}
+.setup-head p{margin:0 auto;color:var(--mute);max-width:560px}
+.seg{display:inline-flex;background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:4px;gap:2px}
+.seg button{border:0;background:none;padding:7px 16px;border-radius:9px;color:var(--mute);font-weight:600;font-size:13.5px}
+.seg button.on{background:var(--surf3);color:var(--ink)}
+.seg-row{display:flex;justify-content:center;margin-bottom:22px}
+.zones{display:grid;grid-template-columns:1fr 54px 1fr;align-items:stretch;gap:0;max-width:900px;margin:0 auto}
+.zones.same{grid-template-columns:minmax(0,520px);justify-content:center}
+.zones.same .link,.zones.same #zone-jpg{display:none}
+.link{display:grid;place-items:center;color:var(--line2)}
+.zone{position:relative;min-height:268px;border:2px dashed var(--line2);border-radius:24px;background:var(--bg2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:26px 22px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s,transform .15s}
+.zone:hover{border-color:var(--mute);background:var(--surf)}
+.zone.drop-on{border-color:var(--accent);background:var(--accent-soft);transform:scale(1.015)}
+.zone .z-tag{position:absolute;top:16px;left:18px;font-size:12.5px;font-weight:650;color:var(--mute)}
+.zone .z-ic{width:62px;height:62px;border-radius:18px;background:var(--surf2);display:grid;place-items:center;color:var(--ink2)}
+.zone .z-t{font-size:18px;font-weight:700}
+.zone .z-s{color:var(--mute);font-size:13px}
+.zone .z-path{display:none;font-size:20px;font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zone .z-cnt{display:none;gap:8px;flex-wrap:wrap;justify-content:center;font-size:13px;min-height:24px}
+.zone .z-chg{display:none;font-size:12.5px;color:var(--mute)}
+.zone.filled{border-style:solid;border-color:rgba(95,199,176,.5);background:linear-gradient(180deg,var(--surf),var(--bg2))}
+.zone.filled .z-t,.zone.filled .z-s{display:none}
+.zone.filled .z-path,.zone.filled .z-cnt{display:flex}
+.zone.filled .z-path{display:block}
+.zone.filled .z-chg{display:block}
+.zone.filled .z-ic{background:var(--ok-soft);color:var(--ok)}
+.cn{border-radius:99px;padding:2px 11px;background:var(--surf3);color:var(--ink2)}
+.cn b{color:var(--ink);font-variant-numeric:tabular-nums}
+.cn.bad{background:var(--bad-soft);color:var(--bad)}
+.start-row{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:30px}
+.start-row .sub{color:var(--mute);font-size:13px}
+.start-row .sub a{color:var(--ink2);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.prog{width:min(560px,100%);margin-top:6px}
+.prog .track{height:8px;background:var(--surf2);border-radius:99px;overflow:hidden}
+.prog .bar{height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .15s}
+.prog .txt{font-size:13px;color:var(--mute);margin-top:7px;text-align:center}
+
+/* ---------- 第 2 步：核对 ---------- */
+#viewReview{padding-bottom:150px}
+.rv-bar{position:sticky;top:var(--hh);z-index:30;margin:0 -24px;padding:12px 24px;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:rgba(18,20,23,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line2);background:var(--surf);border-radius:99px;padding:5px 14px;font-weight:600;font-size:13.5px;color:var(--ink2);display:flex;gap:7px;align-items:center}
+.chip em{font-style:normal;color:var(--mute);font-variant-numeric:tabular-nums}
+.chip:hover{background:var(--surf2)}
+.chip.on{background:var(--ink);color:#15171a;border-color:var(--ink)}
+.chip.on em{color:#555}
+.chip.zero{opacity:.45}
+.chip.t-warn:not(.on) em{color:var(--warn)}
+.chip.t-bad:not(.on) em{color:var(--bad)}
+.rv-tools{display:flex;gap:16px;align-items:center;color:var(--mute);font-size:13px}
+.rv-tools label{display:flex;align-items:center;gap:7px;cursor:pointer}
+.rv-tools input[type=range]{width:96px;accent-color:var(--accent)}
+.rv-tools input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+.attn{display:flex;align-items:center;gap:18px;margin:20px 0 6px;padding:16px 20px;border:1px solid var(--line2);border-radius:18px;background:linear-gradient(100deg,var(--surf),var(--bg2))}
+.attn.warn{border-color:rgba(242,180,65,.4);background:linear-gradient(100deg,rgba(242,180,65,.10),var(--bg2))}
+.attn .ai{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--ok-soft);color:var(--ok);flex:none}
+.attn.warn .ai{background:var(--warn-soft);color:var(--warn)}
+.attn .at{flex:1;min-width:0}
+.attn .at b{font-size:16px}
+.attn .as{color:var(--mute);font-size:13px;margin-top:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--min),1fr));gap:16px;margin-top:18px}
+.cd{position:relative;background:var(--surf);border:1px solid var(--line);border-radius:16px;padding:8px 8px 10px;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 250px;transition:border-color .15s,transform .15s}
+.cd:hover{border-color:var(--line2);transform:translateY(-2px)}
+.cd.warn{border-color:rgba(242,180,65,.55)}
+.cd.cfl{border-color:rgba(239,107,95,.75);box-shadow:0 0 0 1px rgba(239,107,95,.25)}
+.cd.bad{border-color:rgba(239,107,95,.4);background:linear-gradient(180deg,rgba(239,107,95,.07),var(--surf))}
+.pair{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:3px;border-radius:10px;overflow:hidden;transition:opacity .15s,filter .15s}
+.cd.off .pair{opacity:.3;filter:grayscale(1)}
+.cd.off .n1{text-decoration:line-through;color:var(--mute)}
+.th{position:relative;aspect-ratio:4/3;background:#0b0c0e;display:grid;place-items:center}
+.th img{width:100%;height:100%;object-fit:contain;display:block}
+.th .tg{position:absolute;left:6px;bottom:5px;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:5px;background:rgba(0,0,0,.62);color:#ddd}
+.noimg{color:var(--mute);font-size:12px;text-align:center;padding:8px}
+.th.miss{background:repeating-linear-gradient(135deg,#17191d 0 8px,#1b1e23 8px 16px)}
+.th.miss .noimg{color:var(--bad);font-weight:650}
+.ck{position:absolute;top:7px;left:7px;width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.8);background:rgba(0,0,0,.45);display:grid;place-items:center;color:transparent;padding:0;z-index:2;backdrop-filter:blur(4px)}
+.ck[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.ck:hover{border-color:#fff}
+.inf{padding:9px 4px 0}
+.inf .n1{font-weight:650;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);letter-spacing:-.01em}
+.inf .n2{font-size:12.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)}
+.inf .n2.err{color:var(--bad);font-family:inherit}
+.inf .bd{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;min-height:21px}
+.empty{grid-column:1/-1;text-align:center;color:var(--mute);padding:70px 0}
+
+/* ---------- 底部导出条 ---------- */
+.xbar{position:fixed;left:0;right:0;bottom:0;z-index:35;background:rgba(22,25,29,.94);backdrop-filter:blur(16px);border-top:1px solid var(--line2)}
+.xin{max-width:1180px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:14px}
+.xinfo{display:flex;align-items:baseline;gap:7px;color:var(--mute);white-space:nowrap}
+.xinfo b{font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums}
+.dest{margin-left:auto;display:flex;align-items:center;gap:8px;border:1px solid var(--line2);background:var(--surf);border-radius:12px;padding:8px 12px;min-width:0;max-width:440px;color:var(--ink2);font-size:13px}
+.dest:hover{background:var(--surf2)}
+.dest span#outPath{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.xprog{max-width:1180px;margin:0 auto;padding:12px 24px 0}
+.xprog .txt{text-align:left}
+.fails{font-size:12px;color:var(--bad);margin-top:6px;white-space:pre-wrap;max-height:90px;overflow:auto}
+@media(max-width:760px){.xin{flex-wrap:wrap;padding:10px 14px}.dest{order:3;margin-left:0;max-width:none;width:100%}.xinfo span{display:none}.xin .btn.primary{margin-left:auto}}
+
+/* ---------- 核对台（大图） ---------- */
+.ov{position:fixed;inset:0;z-index:60}
+.scrim{position:absolute;inset:0;background:rgba(6,7,8,.72)}
+#lb{display:flex;flex-direction:column;background:#0a0b0d}
+.lb-top{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line)}
+.lb-top .pos{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px}
+.lb-top .ttl{flex:1;min-width:0;color:var(--mute);font-family:var(--mono);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-stage{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 64px}
+@media(max-width:820px){.lb-stage{grid-template-columns:1fr;grid-template-rows:1fr 1fr;padding:10px 12px}}
+.pane{position:relative;min-height:0;display:flex;flex-direction:column;border-radius:16px;background:#08090a;border:1px solid var(--line);overflow:hidden}
+.pane .pimg{flex:1;min-height:0;display:grid;place-items:center;position:relative}
+.pane img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.pane .pcap{display:flex;justify-content:space-between;gap:10px;padding:8px 14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mute)}
+.pane .pcap b{font-family:var(--mono);color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pane .ptag{position:absolute;top:10px;left:12px;font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:6px;background:rgba(0,0,0,.65);color:#ddd;z-index:1}
+.pane.none .pimg::after{content:"没有找到对应的 RAW";color:var(--bad);font-weight:650}
+.pane.none img{display:none}
+.navb{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);background:var(--surf);display:grid;place-items:center;z-index:3}
+.navb:hover{background:var(--surf3)}
+.navb.l{left:10px}.navb.r{right:10px}
+.navb:disabled{opacity:.25}
+.lb-info{padding:2px 64px 8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--ink2);min-height:30px}
+.cands{padding:0 64px 6px}
+.cands .ct{font-size:12.5px;color:var(--mute);margin-bottom:6px}
+.cstrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px}
+.cand{flex:none;width:108px;border:2px solid transparent;background:var(--surf);border-radius:10px;padding:4px;text-align:left}
+.cand:hover{background:var(--surf2)}
+.cand.cur{border-color:var(--accent)}
+.cand img{width:100%;aspect-ratio:4/3;object-fit:contain;background:#0b0c0e;border-radius:6px;display:block}
+.cand .cn1{font-size:11px;font-family:var(--mono);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cand .cn2{font-size:11px;color:var(--mute)}
+.lb-act{display:flex;align-items:center;gap:10px;padding:10px 20px 16px;border-top:1px solid var(--line);justify-content:center;flex-wrap:wrap}
+.lb-act .hint{color:var(--mute);font-size:12px;margin-left:12px}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line2);border-bottom-width:2px;border-radius:5px;padding:0 5px;margin-left:6px;color:var(--ink2)}
+.btn.keep{background:var(--ok);color:#06241d}
+.btn.keep:hover{background:#78d6c1}
+.btn.drop{background:var(--bad-soft);color:var(--bad)}
+.btn.drop:hover{background:rgba(239,107,95,.28)}
+
+/* ---------- 抽屉 / 弹窗 ---------- */
+.drawer{position:absolute;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--surf);border-left:1px solid var(--line2);padding:22px 22px 30px;overflow:auto;animation:slin .18s ease-out}
+@keyframes slin{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+.modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(620px,calc(100% - 24px));max-height:calc(100% - 40px);overflow:auto;background:var(--surf);border:1px solid var(--line2);border-radius:20px;padding:24px;animation:pop .16s ease-out}
+@keyframes pop{from{transform:translate(-50%,-47%);opacity:0}to{transform:translate(-50%,-50%);opacity:1}}
+.dh{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.dh h2{margin:0;font-size:18px}
+.fld{margin-bottom:16px}
+.fld>label{display:block;font-weight:650;font-size:13px;margin-bottom:6px}
+.hint{color:var(--mute);font-size:12.5px;margin-top:5px}
+input[type=number],input[type=text]{width:100%;border:1px solid var(--line2);background:var(--bg2);color:var(--ink);border-radius:10px;padding:9px 12px;font:inherit}
+.chk{display:flex;align-items:flex-start;gap:9px;margin:0 0 10px;cursor:pointer}
+.chk input{accent-color:var(--accent);margin-top:3px;width:16px;height:16px;flex:none}
+.chk small{display:block;color:var(--mute);font-size:12.5px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pickrow{display:flex;gap:8px}
+.pathbox{flex:1;min-width:0;border:1px solid var(--line2);background:var(--bg2);border-radius:10px;padding:9px 12px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pathbox.set{color:var(--ink)}
+.row2{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+details{color:var(--ink2);font-size:13px;margin-top:16px}
+summary{cursor:pointer;color:var(--mute)}
+.steps-txt{line-height:1.9;margin-top:10px}
+.sect{font-size:12.5px;color:var(--mute);margin:20px 0 8px;font-weight:650}
+code{font-family:var(--mono);background:var(--bg2);padding:1px 6px;border-radius:5px}
+
+/* ---------- 其他 ---------- */
+#dropOverlay{position:fixed;inset:0;z-index:55;pointer-events:none;display:grid;place-items:center;background:rgba(240,166,75,.10);border:3px dashed var(--accent);margin:10px;border-radius:26px;inset:0}
+#dropOverlay div{background:var(--surf);border:1px solid var(--accent);border-radius:16px;padding:16px 26px;font-weight:700;font-size:17px}
+.toasts{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+body[data-view=setup] .toasts{bottom:28px}
+.toast{background:var(--surf3);border:1px solid var(--line2);border-radius:12px;padding:9px 16px;font-size:13.5px;box-shadow:0 8px 30px rgba(0,0,0,.4);animation:pop2 .2s ease-out;max-width:min(560px,92vw)}
+.toast.ok{border-color:rgba(95,199,176,.6)}
+.toast.warn{border-color:rgba(242,180,65,.6)}
+@keyframes pop2{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-view="setup">
+
+<header class="top">
+  <div class="brand"><span class="lg"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 15 5-5 4 4 3-3 6 6"/></svg></span><b>RAW 选片</b></div>
+  <nav class="steps">
+    <button class="step on" id="st1"><i>1</i><span>选择文件夹</span></button><span class="sep"></span>
+    <button class="step" id="st2" disabled><i>2</i><span>核对结果</span></button><span class="sep"></span>
+    <button class="step" id="st3" disabled><i>3</i><span>导出</span></button>
+  </nav>
+  <div class="top-r">
+    <div class="tally" id="tally" hidden><b id="heroCount">0</b><span>个 RAW 待导出</span></div>
+    <button class="icon-btn" id="openSettings" title="匹配设置" aria-label="匹配设置"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="browserWarn" class="banner" hidden>当前浏览器不能直接复制文件。你仍然可以匹配并导出清单；要一键复制 RAW，请用 Chrome 或 Edge 打开这个文件。</div>
+</div>
+
+<!-- ============ 1 选择 ============ -->
+<main id="viewSetup" class="wrap">
+  <div class="setup-head">
+    <h1>按客户选的 JPG，找回对应的 RAW</h1>
+    <p>把文件夹拖进来就行，会自动识别哪个是 JPG、哪个是 RAW。所有文件只在你的电脑里处理，不会上传。</p>
+  </div>
+  <div class="seg-row"><div class="seg" id="modeSeg"><button data-mode="split" class="on">JPG 和 RAW 分开放</button><button data-mode="same">放在同一个文件夹</button></div></div>
+  <input type="checkbox" id="sameFolder" hidden>
+  <div class="zones" id="zones">
+    <div class="zone" id="zone-jpg" data-k="jpg" tabindex="0" role="button" aria-label="选择客户选好的 JPG 文件夹">
+      <span class="z-tag">客户选好的 JPG</span>
+      <div class="z-ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5-5 3.5 3.5L16 13l4 5"/></svg></div>
+      <div class="z-t">拖入 JPG 文件夹</div><div class="z-s">或点击这里选择</div>
+      <div class="z-path" id="jpgPath"></div><div class="z-cnt" id="jpgCnt"></div><div class="z-chg">点击可更换</div>
+    </div>
+    <div class="link"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-5-5 5 5-5 5"/></svg></div>
+    <div class="zone" id="zone-raw" data-k="raw" tabindex="0" role="button" aria-label="选择 RAW 文件夹">
+      <span class="z-tag" id="rawTag">RAW 原片</span>
+      <div class="z-ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+      <div class="z-t" id="rawTitle">拖入 RAW 文件夹</div><div class="z-s">或点击这里选择</div>
+      <div class="z-path" id="rawPath"></div><div class="z-cnt" id="rawCnt"></div><div class="z-chg">点击可更换</div>
+    </div>
+  </div>
+  <input type="file" id="fb-raw" webkitdirectory multiple hidden>
+  <input type="file" id="fb-jpg" webkitdirectory multiple hidden>
+  <div class="start-row">
+    <button class="btn primary lg" id="startBtn" disabled>开始匹配</button>
+    <div class="sub" id="startHint">先选好文件夹。先按文件名匹配，对不上再用拍摄时间和画面对照。<a id="goSettings">匹配设置</a></div>
+    <div class="prog" id="progwrap" hidden><div class="track"><div class="bar" id="bar"></div></div><div class="txt" id="status"></div></div>
+  </div>
+</main>
+
+<!-- ============ 2 核对 ============ -->
+<section id="viewReview" class="wrap" hidden>
+  <div class="rv-bar">
+    <div class="chips" id="chips"></div>
+    <div class="rv-tools">
+      <label><input type="checkbox" id="checkAll"> 全选</label>
+      <label>大小 <input type="range" id="sizeRange" min="220" max="520" value="300"></label>
+      <button class="btn ghost sm" id="backBtn">重新选择文件夹</button>
+    </div>
+  </div>
+  <div class="banner" id="rawNoTimeBanner" hidden></div>
+  <div class="attn" id="attn"></div>
+  <div class="grid" id="grid"></div>
+</section>
+
+<!-- ============ 3 导出条 ============ -->
+<div class="xbar" id="xbar" hidden>
+  <div class="xprog" id="copyProg" hidden>
+    <div class="prog" style="width:100%;margin:0"><div class="track"><div class="bar" id="copyBar"></div></div><div class="txt" id="copyStatus"></div></div>
+    <div class="fails" id="copyFails"></div>
+  </div>
+  <div class="xin">
+    <div class="xinfo"><b id="xCount">0</b><span id="exportCount">个 RAW 将被复制</span></div>
+    <button class="dest" id="destBtn" title="更改导出位置"><span class="mute">导出到</span><span id="outPath"></span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+    <button class="btn ghost" id="cancelBtn" hidden>停止</button>
+    <button class="btn primary" id="copyBtn" disabled>导出 RAW</button>
+  </div>
+</div>
+
+<!-- ============ 核对台 ============ -->
+<div class="ov" id="lb" hidden role="dialog" aria-label="核对台">
+  <div class="lb-top">
+    <span class="pos" id="lbPos"></span><span id="lbStatus"></span>
+    <span class="ttl" id="lbTitle"></span>
+    <button class="icon-btn" id="lbClose" aria-label="关闭"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="lb-stage">
+    <button class="navb l" id="lbPrev" aria-label="上一张"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg></button>
+    <button class="navb r" id="lbNext" aria-label="下一张"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>
+    <div class="pane"><span class="ptag">客户选的 JPG</span><div class="pimg"><img id="lbJpg" alt=""></div><div class="pcap"><b id="lbJpgName"></b><span id="lbJpgInfo"></span></div></div>
+    <div class="pane" id="lbRawPane"><span class="ptag">RAW 内嵌预览</span><div class="pimg"><img id="lbRaw" alt=""></div><div class="pcap"><b id="lbRawName"></b><span id="lbRawInfo"></span></div></div>
+  </div>
+  <div class="lb-info" id="lbInfo"></div>
+  <div class="cands" id="lbCands"></div>
+  <div class="lb-act">
+    <button class="btn ghost" id="lbUnpair">不是这张，取消配对</button>
+    <button class="btn drop" id="lbDrop">不导出这张<kbd>X</kbd></button>
+    <button class="btn keep" id="lbKeep">确认，下一张<kbd>Enter</kbd></button>
+    <span class="hint">← → 切换 · Esc 关闭</span>
+  </div>
+</div>
+
+<!-- ============ 设置抽屉 ============ -->
+<div class="ov" id="drawerOv" hidden>
+  <div class="scrim" data-close="drawerOv"></div>
+  <aside class="drawer">
+    <div class="dh"><h2>匹配设置</h2><button class="icon-btn" data-close="drawerOv" aria-label="关闭"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <p class="hint" style="margin-top:-8px;margin-bottom:18px">默认设置适合大多数情况，一般不用改。</p>
+    <label class="chk"><input type="checkbox" id="m-name" checked><span>按文件名匹配<small>文件名相同（不分大小写和扩展名）就算同一张</small></span></label>
+    <label class="chk"><input type="checkbox" id="m-contain" checked><span>JPG 改过名也尝试<small>如 IMG_1234-修图.jpg 对应 IMG_1234.CR3</small></span></label>
+    <label class="chk"><input type="checkbox" id="m-time" checked><span>按拍摄时间匹配<small>名字对不上时，找拍摄时间最接近的 RAW</small></span></label>
+    <label class="chk"><input type="checkbox" id="m-image" checked><span>画面对照<small>用 RAW 内嵌预览核对画面，改名、旋转过也能找回，并显示对比图</small></span></label>
+    <label class="chk"><input type="checkbox" id="recursive" checked><span>包含子文件夹</span></label>
+    <div class="two" style="margin-top:14px">
+      <div class="fld"><label>拍摄时间容差（秒）</label><input type="number" id="tol" value="5" min="0" step="1"><div class="hint">相差不超过这个数，就算同一张</div></div>
+      <div class="fld"><label>时间偏移（秒）</label><input type="number" id="offset" value="0" step="1"><div class="hint">两台相机时间不一致时填：JPG 时间 + 偏移 ≈ RAW 时间</div></div>
+    </div>
+    <div class="fld"><label>画面差异阈值（默认 40，越小越严）</label><input type="number" id="img-tol" value="40" min="0" max="256" step="1"><div class="hint">超过这个值会标「需确认」。大幅裁切、倾斜时算法可能认不出，请在核对台里人工判断或手动改配。</div></div>
+    <details>
+      <summary>匹配规则说明</summary>
+      <p class="steps-txt">① 文件名相同 → 直接匹配。② JPG 名里包含 RAW 编号 → 匹配。③ 都不行时，读取拍摄时间，在容差内找最近的 RAW；连拍时每张 RAW 只配给一张 JPG，并标「需确认」。④ 名字相同但拍摄时间对不上，也会匹配，但标「需确认」，防止多台相机文件名重复时配错。⑤ 开启画面对照后，所有配对都会再用画面核对一遍。<br>支持 CR2/CR3、NEF、ARW、RAF、ORF、RW2、DNG、PEF 等常见 RAW。</p>
+    </details>
+  </aside>
+</div>
+
+<!-- ============ 导出设置 ============ -->
+<div class="ov" id="exportOv" hidden>
+  <div class="scrim" data-close="exportOv"></div>
+  <div class="modal">
+    <div class="dh"><h2>导出设置</h2><button class="icon-btn" data-close="exportOv" aria-label="关闭"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="banner" id="noFsBanner" hidden style="margin-top:0">当前浏览器不能让网页直接复制文件，所以不能一键导出。请用下面的「复制脚本」（3 步），或者改用 Chrome / Edge 打开本页。</div>
+    <div class="fld">
+      <label>导出文件夹</label>
+      <div class="pickrow"><div class="pathbox" id="outPathBox">默认位置</div><button class="btn" id="pickOut">选择</button><button class="btn ghost" id="outResetBtn" hidden>改回默认</button></div>
+      <div class="hint">只复制匹配到的 RAW，不会移动或删除原文件。</div>
+    </div>
+    <div class="fld" id="nameRow"><label>新文件夹名称（使用默认位置时）</label><input type="text" id="outName" value="选片RAW"></div>
+    <div class="sect">其他导出</div>
+    <div class="row2" style="margin-top:0">
+      <button class="btn ghost sm" id="csvBtn">对照表（CSV）</button>
+      <button class="btn ghost sm" id="rawListBtn">RAW 文件名清单</button>
+      <button class="btn ghost sm" id="unmatchedBtn">未匹配 JPG 清单</button>
+    </div>
+    <details id="scriptBox">
+      <summary>用「复制脚本」导出（不能直接导出时用这个）</summary>
+      <div class="row2"><button class="btn sm" id="winScriptBtn" disabled>下载 Windows 脚本 (.bat)</button><button class="btn sm" id="macScriptBtn" disabled>下载 Mac 脚本 (.command)</button></div>
+      <p class="steps-txt"><b>Windows：</b>① 点上面的按钮下载 → ② 把「复制选片RAW.bat」放进你的 <b>RAW 文件夹</b> → ③ 双击它。黑色窗口跑完后，RAW 文件夹里会多出「选片RAW」文件夹，里面就是挑好的 RAW。<br>
+      <b>Mac：</b>① 下载 → ② 放进 <b>RAW 文件夹</b> → ③ 打开“终端”，输入 <code>bash</code> 加一个空格，把文件拖进终端，回车。<br>
+      脚本只做“复制”，不会移动或删除文件。浏览器若提示“此类文件可能有害”，点“保留”即可。</p>
+    </details>
+  </div>
+</div>
+
+<div id="dropOverlay" hidden><div>松开鼠标，自动识别 JPG 和 RAW 文件夹</div></div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hasFS='showDirectoryPicker' in window;
+function isSame(){return $('sameFolder').checked;}
+const state={raw:null,jpg:null,out:null,results:[],filter:'all',rawNoTime:0,cancel:false,view:'setup'};
+const jpgSrc=()=>isSame()?state.raw:state.jpg;
+
+// ==== PARSERS START
+const RAW_EXT=new Set(['cr2','cr3','crw','nef','nrw','arw','srf','sr2','raf','orf','rw2','rwl','dng','pef','raw','3fr','erf','kdc','mrw','x3f','srw','iiq','dcr','fff','gpr','mef','mos','cap']);
+const JPG_EXT=new Set(['jpg','jpeg','jpe','jfif']);
+function extOf(n){const i=n.lastIndexOf('.');return i<0?'':n.slice(i+1).toLowerCase();}
+function baseOf(n){const i=n.lastIndexOf('.');return i<=0?n:n.slice(0,i);}
+
+function parseTiff(dv,base,exifDirect){
+  if(base<0||base+8>dv.byteLength)return null;
+  const b0=dv.getUint8(base),b1=dv.getUint8(base+1);
+  let le;
+  if(b0===0x49&&b1===0x49)le=true;else if(b0===0x4d&&b1===0x4d)le=false;else return null;
+  const u16=o=>dv.getUint16(base+o,le),u32=o=>dv.getUint32(base+o,le);
+  const inRange=(o,len)=>o>=0&&base+o+len<=dv.byteLength;
+  const str=(o,len)=>{let s='';for(let i=0;i<len;i++){const c=dv.getUint8(base+o+i);if(!c)break;s+=String.fromCharCode(c);}return s;};
+  function readIFD(off){
+    const tags={};
+    if(!inRange(off,2))return tags;
+    const n=u16(off);
+    if(n>500)return tags;
+    for(let i=0;i<n;i++){
+      const e=off+2+i*12;
+      if(!inRange(e,12))break;
+      const tag=u16(e),type=u16(e+2),cnt=u32(e+4);
+      const size=(type===3||type===8)?2*cnt:(type===4||type===9||type===13)?4*cnt:(type===5||type===10||type===12)?8*cnt:cnt;
+      const valOff=size>4?u32(e+8):e+8;
+      tags[tag]={type,cnt,off:valOff,size};
+    }
+    return tags;
+  }
+  const getStr=t=>(t&&t.size>0&&inRange(t.off,t.size))?str(t.off,t.size):null;
+  const ifd0=readIFD(u32(4));
+  let exif={};
+  if(exifDirect)exif=ifd0;
+  else if(ifd0[0x8769]){const p=u32(ifd0[0x8769].off);exif=readIFD(p);}
+  const dt=getStr(exif[0x9003])||getStr(exif[0x9004])||getStr(ifd0[0x0132]);
+  const sub=getStr(exif[0x9291])||'';
+  return dt?{dt,sub}:null;
+}
+function parseJpeg(dv){
+  if(dv.byteLength<4||dv.getUint16(0)!==0xFFD8)return null;
+  let o=2;
+  while(o+4<=dv.byteLength){
+    if(dv.getUint8(o)!==0xFF){o++;continue;}
+    const m=dv.getUint8(o+1);
+    if(m===0xFF){o++;continue;}
+    if(m===0xD8||m===0x01||(m>=0xD0&&m<=0xD7)){o+=2;continue;}
+    if(m===0xDA||m===0xD9)break;
+    const len=dv.getUint16(o+2);
+    if(m===0xE1&&o+10<=dv.byteLength&&dv.getUint32(o+4)===0x45786966){
+      const r=parseTiff(dv,o+10,false);
+      if(r)return r;
+    }
+    o+=2+len;
+  }
+  return null;
+}
+function parseCR3(dv){
+  const b=new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength);
+  let cmt1=null;
+  for(let i=4;i<b.length-16;i++){
+    if(b[i]===0x43&&b[i+1]===0x4d&&b[i+2]===0x54){
+      const k=b[i+3];
+      if(k===0x32){const r=parseTiff(dv,i+4,true);if(r)return r;}
+      else if(k===0x31&&!cmt1){cmt1=parseTiff(dv,i+4,false);}
+    }
+  }
+  return cmt1;
+}
+function regexScan(buf){
+  const s=new TextDecoder('latin1').decode(buf);
+  const re=/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/g;
+  let m;
+  while((m=re.exec(s))){
+    if(+m[1]>=1990&&+m[1]<=2100&&+m[2]>=1&&+m[2]<=12)return{dt:m[0],sub:''};
+  }
+  return null;
+}
+function toMs(r){
+  const m=/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(r.dt);
+  if(!m)return null;
+  const y=+m[1];
+  if(y<1990||y>2100||+m[2]<1||+m[2]>12)return null;
+  let ms=Date.UTC(y,+m[2]-1,+m[3],+m[4],+m[5],+m[6]);
+  const sub=(r.sub||'').trim();
+  if(/^\d+$/.test(sub))ms+=parseFloat('0.'+sub)*1000;
+  return ms;
+}
+async function readTime(file){
+  const ext=extOf(file.name);
+  const isJpg=JPG_EXT.has(ext);
+  const sizes=isJpg?[262144,2097152]:[1048576,8388608];
+  for(const n of sizes){
+    const buf=await file.slice(0,n).arrayBuffer();
+    const dv=new DataView(buf);
+    let r=null;
+    try{
+      if(isJpg)r=parseJpeg(dv);
+      else r=parseTiff(dv,0,false)||parseCR3(dv);
+    }catch(e){r=null;}
+    if(!r)r=regexScan(buf);
+    if(r){const ms=toMs(r);if(ms!=null)return ms;}
+    if(buf.byteLength<n)break;
+  }
+  return null;
+}
+// ==== PARSERS END
+async function scanDir(dir,recursive,path,skip){
+  const out=[];
+  for await(const [name,h] of dir.entries()){
+    if(name.startsWith('.'))continue;
+    if(h.kind==='file')out.push({name,path:path+name,handle:h});
+    else if(recursive&&name.toLowerCase()!==skip)out.push(...await scanDir(h,true,path+name+'/',skip));
+  }
+  return out;
+}
+async function scanSource(src,recursive){
+  const skip=cleanFolderName($('outName').value).toLowerCase();
+  if(src.type==='files'){
+    return src.files.filter(f=>{
+      const p=(f.webkitRelativePath||f.name).split('/');
+      if(p.some(x=>x.startsWith('.')))return false;
+      if(p.slice(1,-1).some(x=>x.toLowerCase()===skip))return false;
+      return recursive||p.length<=2;
+    }).map(f=>({name:f.name,path:(f.webkitRelativePath||f.name).split('/').slice(1).join('/')||f.name,file:f}));
+  }
+  return scanDir(src.handle,recursive,'',skip);
+}
+const getFile=it=>it.file?Promise.resolve(it.file):it.handle.getFile();
+const getTime=it=>it.tp||(it.tp=(async()=>{try{return await readTime(await getFile(it));}catch(e){return null;}})());
+async function pool(items,limit,fn){
+  let i=0;
+  const ws=Array.from({length:Math.min(limit,items.length)},async()=>{while(i<items.length){const idx=i++;await fn(items[idx],idx);}});
+  await Promise.all(ws);
+}
+function setProg(txt,pct){
+  $('progwrap').hidden=!txt;
+  $('status').textContent=txt||'';
+  $('bar').style.width=(pct||0)+'%';
+}
+function tokenIn(h,n){
+  if(n.length<4||h.length<n.length)return false;
+  let i=h.indexOf(n);
+  while(i>=0){
+    const a=h[i-1],b=h[i+n.length];
+    if(!(a&&/\d/.test(a))&&!(b&&/\d/.test(b)))return true;
+    i=h.indexOf(n,i+1);
+  }
+  return false;
+}
+function lb(arr,v){let lo=0,hi=arr.length;while(lo<hi){const m=(lo+hi)>>1;if(arr[m].t<v)lo=m+1;else hi=m;}return lo;}
+function fmtSec(ms){
+  const s=ms/1000;
+  const a=Math.abs(s);
+  const t=a>=10||Number.isInteger(a)?Math.round(a)+'':a.toFixed(1);
+  return (s<0?'-':'+')+t+' 秒';
+}
+/* ---------- 图片对照：RAW 内嵌 JPEG 预览 vs JPG 画面 ----------
+   RAW 文件头部本来就有相机生成的 JPEG 预览，不需要解码 RAW、不需要装依赖。
+   两张图统一用 imageOrientation:'none' 解码，避免 EXIF 方向标记只把一侧转 90 度。
+   本模块自包含；关掉「画面对照」开关后，页面行为与旧版完全一致。 */
+const IMG = (function () {
+  const CFG = { rawSteps: [524288, 2 * 1024 * 1024, 8 * 1024 * 1024], readCap: 8 * 1024 * 1024, W: 17, H: 16, defTh: 40, NMODE: 8 };
+  // D4 完整 8 种（4 旋转 x 2 镜像）。只做 6 种会漏掉「旋转 90 + 翻转」，
+  // 浏览器对带 EXIF 方向的 JPG 解码后恰好常落在这两种里（headless 实测 3/4 找不到）。
+  const MODE_NAME = ['原方向', '左右翻转', '上下翻转', '转 180', '转 90 A', '转 90 B', '斜向翻转 A', '斜向翻转 B'];
+
+  function on() { const e = document.getElementById('m-image'); return !e || e.checked; }
+  function th() {
+    const e = document.getElementById('img-tol');
+    const v = e ? parseInt(e.value, 10) : CFG.defTh;
+    return (isNaN(v) || v < 0) ? CFG.defTh : Math.min(256, v);
+  }
+  function esc2(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+    });
+  }
+  function ham(a, b) { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; }
+
+  async function decode(blob) {
+    try { return await createImageBitmap(blob, { imageOrientation: 'none' }); }
+    catch (e) { return await createImageBitmap(blob); }
+  }
+  function jpegSegments(u8) {
+    const out = [], n = u8.length;
+    let i = 0;
+    while (i + 3 < n) {
+      if (u8[i] === 0xff && u8[i + 1] === 0xd8 && u8[i + 2] === 0xff) {
+        let j = i + 3, end = -1;
+        while (j + 1 < n) {
+          if (u8[j] === 0xff && u8[j + 1] === 0xd9) { end = j + 2; break; }
+          j++;
+        }
+        if (end > 0) { out.push(u8.subarray(i, end)); i = end; continue; }
+        break;
+      }
+      i++;
+    }
+    return out;
+  }
+  async function readAll(f, cap) {
+    const size = f.size || 0, parts = [];
+    for (let off = 0; off < size; off += cap) {
+      const a = await f.slice(off, Math.min(off + cap, size)).arrayBuffer();
+      parts.push(new Uint8Array(a));
+    }
+    let total = 0; for (const p of parts) total += p.length;
+    const all = new Uint8Array(total); let o = 0;
+    for (const p of parts) { all.set(p, o); o += p.length; }
+    return all;
+  }
+  function xform(x, bmp, mode, W, H, w, h) {
+    x.save(); x.translate(W / 2, H / 2);
+    if (mode === 1) x.scale(-1, 1);
+    else if (mode === 2) x.scale(1, -1);
+    else if (mode === 3) x.scale(-1, -1);
+    else if (mode === 4 || mode === 6) { x.rotate(-Math.PI / 2); if (mode === 6) x.scale(-1, 1); }
+    else if (mode === 5 || mode === 7) { x.rotate(Math.PI / 2); if (mode === 7) x.scale(-1, 1); }
+    // 旋转由画布变换负责，绘制尺寸永远是原图方向的 w x h；
+    // 再交换一次尺寸会把画面压扁（这是第一版实现里的 bug）。
+    x.drawImage(bmp, -w / 2, -h / 2, w, h);
+    x.restore();
+  }
+  function drawHash(bmp, mode) {
+    const W = CFG.W, H = CFG.H;
+    const swap = mode >= 4;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.fillStyle = '#808080'; x.fillRect(0, 0, W, H);
+    // 转 90 度时先画成 H x W 再旋转，铺满后的画布正好是 W x H，
+    // 与 Python 基准「先 transpose 再 resize 到 17x16」等价。
+    xform(x, bmp, mode, W, H, swap ? H : W, swap ? W : H);
+    const d = x.getImageData(0, 0, W, H).data;
+    const g = new Float32Array(W * H);
+    for (let i = 0; i < W * H; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    const bits = new Uint8Array(16 * 16);
+    for (let y = 0; y < 16; y++) for (let xx = 0; xx < 16; xx++)
+      bits[y * 16 + xx] = g[y * 17 + xx] > g[y * 17 + xx + 1] ? 1 : 0;
+    return bits;
+  }
+  function drawThumb(bmp, mode) {
+    const mw = 240, mh = 180;
+    const c = document.createElement('canvas'); c.width = mw; c.height = mh;
+    const x = c.getContext('2d');
+    x.fillStyle = '#0b0c0e'; x.fillRect(0, 0, mw, mh);
+    const swap = mode >= 4;
+    const k = Math.min(mw / (swap ? bmp.height : bmp.width), mh / (swap ? bmp.width : bmp.height));
+    const w = bmp.width * k, h = bmp.height * k;
+    xform(x, bmp, mode, mw, mh, w, h);
+    return c.toDataURL('image/jpeg', 0.65);
+  }
+  async function findPreview(u8) {
+    let best = null, area = 0;
+    for (const s of jpegSegments(u8)) {
+      let bmp;
+      try { bmp = await decode(new Blob([s], { type: 'image/jpeg' })); }
+      catch (e) { continue; }
+      // 取中等尺寸的最大预览（相机直出的全尺寸预览可达 8192x5464，解码太慢且不需要）
+      const a = bmp.width * bmp.height;
+      if (a > area && bmp.width >= 160 && bmp.height >= 120
+          && bmp.width <= 2048 && bmp.height <= 2048) {
+        if (best && best.close) best.close();
+        best = bmp; area = a;
+      } else if (bmp.close) bmp.close();
+    }
+    return best;
+  }
+  async function rawInfo(item) {
+    const f = await getFile(item);
+    // 多数机型预览在前 512KB；找不到就逐级扩到 2MB / 8MB（NEF、ARW 等更靠后）
+    let best = null;
+    for (const n of CFG.rawSteps) {
+      const u8 = new Uint8Array(await f.slice(0, n).arrayBuffer());
+      best = await findPreview(u8);
+      if (best) break;
+      if (u8.length < n) break;
+    }
+    if (!best) return null;
+    const hash = drawHash(best, 0), pic = drawThumb(best, 0);
+    if (best.close) best.close();
+    return { hash: hash, pic: pic };
+  }
+  async function jpgInfo(item) {
+    const f = await getFile(item);
+    // 网页版拿到的是真 File/Blob，交给浏览器自己解码，不必把整个文件读进内存；
+    // 桌面版是 /api/head 包装出来的伪 File，只能分块读成 Blob。
+    let bmp;
+    if (typeof Blob !== 'undefined' && f instanceof Blob) {
+      bmp = await decode(f);
+    } else {
+      const u8 = await readAll(f, CFG.readCap);
+      bmp = await decode(new Blob([u8], { type: 'image/jpeg' }));
+    }
+    const hashes = [], pics = [];
+    for (let m = 0; m < CFG.NMODE; m++) { hashes.push(drawHash(bmp, m)); pics.push(drawThumb(bmp, m)); }
+    if (bmp.close) bmp.close();
+    return { hashes: hashes, pics: pics };
+  }
+
+  async function enhance(results, raws) {
+    if (!on()) return;
+    const T = th();
+    let done = 0;
+    setProg('抽取 RAW 内嵌预览…', 92);
+    await pool(raws, 4, async function (r) {
+      try { r._img = await rawInfo(r); } catch (e) { r._img = null; }
+      done++;
+      if (done % 10 === 0 || done === raws.length)
+        setProg('抽取 RAW 内嵌预览 ' + done + '/' + raws.length, 92);
+    });
+    done = 0;
+    await pool(results, 4, async function (it) {
+      try { it._j = await jpgInfo(it.jpg); } catch (e) { it._j = null; }
+      done++;
+      if (done % 10 === 0 || done === results.length)
+        setProg('分析 JPG 画面 ' + done + '/' + results.length, 95);
+    });
+    for (const it of results) {
+      if (!it._j) continue;
+      const row = [];
+      for (const r of raws) {
+        if (!r._img) continue;
+        let d = 256, m = 0;
+        for (let k = 0; k < CFG.NMODE; k++) {
+          const x = ham(it._j.hashes[k], r._img.hash);
+          if (x < d) { d = x; m = k; }
+        }
+        row.push({ r: r, d: d, m: m });
+      }
+      row.sort(function (a, b) { return a.d - b.d; });
+      it._cands = row.slice(0, 12);
+    }
+    // 第 4 步：画面找回（只补空缺，全局一对一，一个 RAW 只给一张 JPG）
+    const used = new Set(results.filter(r => r.raw).map(r => r.raw));
+    const pairs = [];
+    for (const it of results) {
+      if (it.raw || !it._cands) continue;
+      for (const c of it._cands) if (c.d <= T && !used.has(c.r)) pairs.push({ it: it, c: c });
+    }
+    pairs.sort(function (a, b) { return a.c.d - b.c.d; });
+    for (const p of pairs) {
+      if (p.it.raw || used.has(p.c.r)) continue;
+      p.it.raw = p.c.r; p.it.method = 'image'; used.add(p.c.r);
+    }
+    // 第 5 步：全部已匹配行做画面校验（只标记，不自动剔除）
+    for (const it of results) {
+      if (!it.raw) continue;
+      let best = it._cands ? it._cands.find(c => c.r === it.raw) : null;
+      if (!best && it.raw._img && it._j) {
+        let d = 256, m = 0;
+        for (let k = 0; k < CFG.NMODE; k++) {
+          const x = ham(it._j.hashes[k], it.raw._img.hash);
+          if (x < d) { d = x; m = k; }
+        }
+        best = { d: d, m: m };
+      }
+      it.imgDist = best ? best.d : null;
+      it.imgMode = best ? best.m : 0;
+      it.jpgPic = it._j ? it._j.pics[it.imgMode || 0] : null;
+      it.rawPic = it.raw._img ? it.raw._img.pic : null;
+      if (best && best.d > T) {
+        it.level = 'warn';
+        it.note += (it.note ? '；' : '') + '画面与 RAW 预览对不上（距离 ' + best.d + '），请看图确认';
+      } else if (it.method === 'image') {
+        it.note += (it.note ? '；' : '') + '按画面找回（距离 ' + (best ? best.d : '?') + '）';
+      }
+      if (it.method !== 'image' && best && best.m) {
+        it.note += (it.note ? '；' : '') + '画面已自动对齐（' + MODE_NAME[best.m] + '）';
+      }
+    }
+    for (const it of results) if (!it.jpgPic && it._j) it.jpgPic = it._j.pics[0];
+  }
+
+  // 核对台用：取 RAW 里最大的那张内嵌 JPEG 预览（只在打开大图时才读，不影响匹配速度）
+  async function bigRaw(item) {
+    const f = await getFile(item);
+    const u8 = new Uint8Array(await f.slice(0, CFG.readCap).arrayBuffer());
+    let best = null;
+    for (const s of jpegSegments(u8)) if (!best || s.length > best.length) best = s;
+    return best ? URL.createObjectURL(new Blob([best], { type: 'image/jpeg' })) : null;
+  }
+  // 「名字一致但画面不符」：靠名字配上 + 画面距离超阈值 + 仍需确认。
+  // 纯展示判据，不改 include / method / 匹配结果；手动改配后 level 已清空，不会再进这组。
+  function conflict(r) {
+    return !!(r && r.raw && r.level === 'warn' && r.method === 'name'
+      && r.imgDist != null && r.imgDist > th());
+  }
+  return { enhance: enhance, th: th, conflict: conflict, bigRaw: bigRaw };
+})();
+async function readRawTimes(list,p0,p1,label){
+  const todo=list.filter(x=>x.t===undefined);
+  let done=0;
+  await pool(todo,4,async x=>{
+    x.t=await getTime(x);
+    done++;
+    if(done%10===0||done===todo.length)setProg(label+' '+done+'/'+todo.length,p0+(p1-p0)*done/todo.length);
+  });
+}
+
+async function startMatch(){
+  if(!state.raw||(!isSame()&&!state.jpg)){alert(isSame()?'请先选择文件夹':'请先选择 RAW 文件夹和已选 JPG 文件夹');return;}
+  let tol=parseFloat($('tol').value);if(isNaN(tol)||tol<0)tol=5;
+  const off=parseFloat($('offset').value)||0;
+  const tolMs=tol*1000,offMs=off*1000;
+  const useName=$('m-name').checked,useContain=$('m-contain').checked,useTime=$('m-time').checked;
+  const rec=$('recursive').checked;
+  if(!useName&&!useContain&&!useTime){alert('至少勾选一种匹配方式');return;}
+  $('startBtn').disabled=true;
+  try{
+    setProg('正在扫描文件夹…',0);
+    const [rawItems,jpgItems]=await Promise.all([scanSource(state.raw,rec),scanSource(jpgSrc(),rec)]);
+    const raws=rawItems.filter(f=>RAW_EXT.has(extOf(f.name)));
+    const jpgs=jpgItems.filter(f=>JPG_EXT.has(extOf(f.name)));
+    if(!raws.length){alert('RAW 文件夹里没有找到 RAW 文件。请确认选的是放原片的文件夹。');return;}
+    if(!jpgs.length){alert('已选 JPG 文件夹里没有找到 JPG 文件。');return;}
+
+    raws.forEach(r=>{r.base=baseOf(r.name).toLowerCase();});
+    const byBase=new Map();
+    raws.forEach(r=>{if(!byBase.has(r.base))byBase.set(r.base,[]);byBase.get(r.base).push(r);});
+
+    // 读取 JPG 拍摄时间
+    let done=0;
+    await pool(jpgs,8,async j=>{
+      j.t=await getTime(j);
+      done++;
+      if(done%20===0||done===jpgs.length)setProg('读取 JPG 拍摄时间 '+done+'/'+jpgs.length,30*done/jpgs.length);
+    });
+
+    const results=jpgs.map(j=>({jpg:j,raw:null,method:null,diff:null,note:'',level:'',include:true}));
+    const used=new Set();
+
+    // 1. 文件名
+    if(useName){
+      for(const r of results){
+        const c=byBase.get(baseOf(r.jpg.name).toLowerCase());
+        if(c){r.raw=c[0];r.method='name';if(c.length>1)r.dups=c;}
+      }
+    }
+    // 2. 名字包含
+    if(useContain){
+      setProg('按文件名包含关系匹配…',30);
+      for(const r of results){
+        if(r.raw)continue;
+        const jb=baseOf(r.jpg.name).toLowerCase();
+        const cs=[];
+        for(const rr of raws){if(tokenIn(jb,rr.base)||tokenIn(rr.base,jb))cs.push(rr);}
+        if(cs.length===1){r.raw=cs[0];r.method='contain';}
+      }
+    }
+    // 读取已匹配 RAW 的时间，用于核对
+    const matchedRaws=[...new Set(results.filter(r=>r.raw).flatMap(r=>r.dups||[r.raw]))];
+    await readRawTimes(matchedRaws,30,45,'读取已匹配 RAW 的拍摄时间');
+
+    const finalize=r=>{
+      const rt=r.raw.t,jt=r.jpg.t;
+      if(jt!=null&&rt!=null){
+        r.diff=jt+offMs-rt;
+        if(Math.abs(r.diff)>tolMs){r.level='warn';r.note+=(r.note?'；':'')+'拍摄时间相差 '+fmtSec(r.diff)+'，请确认是同一张';}
+      }else{
+        r.note+=(r.note?'；':'')+'读不到拍摄时间，无法核对';
+      }
+    };
+    for(const r of results){
+      if(r.dups){
+        const jt=r.jpg.t;
+        if(jt!=null){
+          let best=r.dups[0],bd=Infinity;
+          for(const d of r.dups){if(d.t!=null){const x=Math.abs(jt+offMs-d.t);if(x<bd){bd=x;best=d;}}}
+          r.raw=best;
+        }
+        r.level='warn';r.note='有 '+r.dups.length+' 张同名 RAW，已选时间最接近的';
+      }
+      if(r.raw)finalize(r);
+    }
+    results.forEach(r=>{if(r.raw)used.add(r.raw);});
+
+    // 3. 拍摄时间
+    let timed=[];
+    if(useTime){
+      await readRawTimes(raws,45,85,'读取 RAW 拍摄时间');
+      timed=raws.filter(x=>x.t!=null).sort((a,b)=>a.t-b.t);
+      state.rawNoTime=raws.filter(x=>x.t==null).length;
+      setProg('按拍摄时间匹配…',90);
+      const left=results.filter(r=>!r.raw&&r.jpg.t!=null);
+      const pairs=[];
+      for(const r of left){
+        const tg=r.jpg.t+offMs;
+        r.candN=0;
+        for(let i=lb(timed,tg-tolMs);i<timed.length&&timed[i].t<=tg+tolMs;i++){
+          if(used.has(timed[i]))continue;
+          r.candN++;
+          pairs.push({r,raw:timed[i],d:Math.abs(tg-timed[i].t)});
+        }
+      }
+      pairs.sort((a,b)=>a.d-b.d);
+      for(const p of pairs){
+        if(p.r.raw||used.has(p.raw))continue;
+        p.r.raw=p.raw;used.add(p.raw);p.r.method='time';
+      }
+      for(const r of left){
+        if(r.raw){
+          finalize(r);
+          if(r.candN>1){r.level='warn';r.note+=(r.note?'；':'')+'时间窗口内有 '+r.candN+' 张候选（可能是连拍），已取最接近的';}
+        }
+      }
+      // 未匹配的提示
+      for(const r of results){
+        if(r.raw)continue;
+        if(r.jpg.t==null){r.note='JPG 里没有拍摄时间，只能靠文件名';continue;}
+        if(!timed.length){r.note='没有读到任何 RAW 的拍摄时间';continue;}
+        const tg=r.jpg.t+offMs;
+        const i=lb(timed,tg);
+        let best=null,bd=Infinity;
+        for(const c of [timed[i-1],timed[i]]){if(c){const x=Math.abs(tg-c.t);if(x<bd){bd=x;best=c;}}}
+        if(best)r.note='最接近的 RAW 是 '+best.name+'，相差 '+fmtSec(tg-best.t)+(used.has(best)?'（已被别的 JPG 对应）':'（超出容差）');
+      }
+    }else{
+      state.rawNoTime=0;
+    }
+
+    try{ await IMG.enhance(results,raws); }catch(e){ console.warn('画面对照跳过：',e); }
+    results.sort((a,b)=>a.jpg.path.localeCompare(b.jpg.path,undefined,{numeric:true}));
+    state.results=results;
+    state.filter='all';
+    setProg('',0);
+    render();
+    setView('review');
+  }catch(e){
+    console.error(e);
+    alert('匹配时出错：'+(e&&e.message?e.message:e));
+  }finally{
+    refreshStart();
+    setProg('',0);
+  }
+}
+/* =====================================================================
+   界面层（新版）：视图切换 / 文件夹选择 / 卡片网格 / 核对台 / 导出条
+   上面的解析与匹配引擎保持不变。
+   ===================================================================== */
+const toast=(msg,kind)=>{
+  const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');t.textContent=msg;
+  $('toasts').appendChild(t);setTimeout(()=>t.remove(),kind==='warn'?6500:4200);
+};
+const ico={
+  check:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  ok:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  warn:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5m0 3.5h0"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>'
+};
+
+/* ---------- 视图 ---------- */
+function setView(v){
+  state.view=v;document.body.dataset.view=v;
+  const has=state.results.length>0;
+  $('viewSetup').hidden=v!=='setup';$('viewReview').hidden=v!=='review';$('xbar').hidden=v!=='review';
+  $('st1').className='step'+(v==='setup'?' on':(has?' done':''));
+  $('st2').className='step'+(v==='review'?' on':'');
+  $('st3').className='step';
+  $('st2').disabled=!has;$('st3').disabled=!has;
+  $('tally').hidden=!has;
+  window.scrollTo(0,0);
+}
+$('st1').onclick=()=>setView('setup');
+$('st2').onclick=()=>{if(state.results.length)setView('review');};
+$('st3').onclick=()=>{if(state.results.length){if(state.view!=='review')setView('review');openOv('exportOv');}};
+$('backBtn').onclick=()=>setView('setup');
+
+/* ---------- 弹层 ---------- */
+function openOv(id){$(id).hidden=false;}
+function closeOv(id){$(id).hidden=true;}
+document.addEventListener('click',e=>{const c=e.target.closest('[data-close]');if(c)closeOv(c.dataset.close);});
+$('openSettings').onclick=()=>openOv('drawerOv');
+$('goSettings').onclick=()=>openOv('drawerOv');
+$('destBtn').onclick=()=>openOv('exportOv');
+
+/* ---------- 选择文件夹 ---------- */
+if(!hasFS){$('browserWarn').hidden=false;$('noFsBanner').hidden=false;$('scriptBox').open=true;$('pickOut').disabled=true;}
+const zTok={raw:0,jpg:0};
+function refreshStart(){
+  const ok=!!state.raw&&(isSame()||!!state.jpg);
+  $('startBtn').disabled=!ok;
+  $('startHint').firstChild.textContent=ok?'准备好了。先按文件名匹配，对不上再用拍摄时间和画面对照。':'先选好文件夹。先按文件名匹配，对不上再用拍摄时间和画面对照。';
+}
+function setPath(k){
+  const s=state[k];
+  $(k+'Path').textContent=s?s.label:'';
+  $('zone-'+k).classList.toggle('filled',!!s);
+  if(s)updateZoneInfo(k);else $(k+'Cnt').innerHTML='';
+  refreshStart();refreshOutPath();
+}
+async function updateZoneInfo(k){
+  const s=state[k],el=$(k+'Cnt'),t=++zTok[k];
+  el.innerHTML='<span class="cn">正在统计…</span>';
+  let items=[];try{items=await scanSource(s,$('recursive').checked);}catch(e){}
+  if(t!==zTok[k]||state[k]!==s)return;
+  let r=0,j=0;items.forEach(f=>{const x=extOf(f.name);if(RAW_EXT.has(x))r++;else if(JPG_EXT.has(x))j++;});
+  const c=(n,l)=>n?'<span class="cn"><b>'+n+'</b> 张 '+l+'</span>':'<span class="cn bad">没有找到 '+l+'</span>';
+  let h;
+  if(isSame())h=c(j,'JPG')+c(r,'RAW');
+  else if(k==='raw')h=c(r,'RAW')+(r===0&&j>0?'<span class="cn bad">这里是 JPG，是不是放反了？</span>':'');
+  else h=c(j,'JPG')+(j===0&&r>0?'<span class="cn bad">这里是 RAW，是不是放反了？</span>':'');
+  el.innerHTML=h;
+}
+async function pickFolder(k){
+  if(hasFS){
+    try{
+      const h=await window.showDirectoryPicker({id:k,mode:'read'});
+      state[k]={type:'handle',handle:h,label:h.name};setPath(k);
+    }catch(e){
+      if(e.name!=='AbortError')alert('无法打开这个文件夹：'+e.message+'\n请换一个文件夹（不要直接选盘符根目录，或桌面、"下载"文件夹本身）。');
+    }
+  }else $('fb-'+k).click();
+}
+for(const k of ['raw','jpg']){
+  const z=$('zone-'+k);
+  z.onclick=()=>pickFolder(k);
+  z.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pickFolder(k);}};
+  $('fb-'+k).onchange=e=>{
+    const files=[...e.target.files];if(!files.length)return;
+    const label=(files[0].webkitRelativePath||'').split('/')[0]||'已选择';
+    state[k]={type:'files',files,label};setPath(k);e.target.value='';
+  };
+}
+function applySame(){
+  const s=isSame();
+  $('zones').classList.toggle('same',s);
+  $('modeSeg').querySelectorAll('button').forEach(b=>b.classList.toggle('on',(b.dataset.mode==='same')===s));
+  $('rawTag').textContent=s?'同时放着 JPG 和 RAW 的文件夹':'RAW 原片';
+  $('rawTitle').textContent=s?'拖入这个文件夹':'拖入 RAW 文件夹';
+  if(state.raw)updateZoneInfo('raw');
+  refreshStart();refreshOutPath();
+}
+$('modeSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;$('sameFolder').checked=b.dataset.mode==='same';applySame();};
+
+/* ---------- 拖拽文件夹 ---------- */
+const dropMsg=(t,cls)=>{if(t==='正在识别…')return;toast(t,cls==='warn'?'warn':'ok');};
+function setFolder(kind,handle){state[kind]={type:'handle',handle,label:handle.name};setPath(kind);}
+async function sampleDir(handle){
+  let raw=0,jpg=0,seen=0;
+  async function walk(d,depth){
+    for await(const [name,h] of d.entries()){
+      if(seen>=400)return;
+      if(name.startsWith('.'))continue;
+      if(h.kind==='file'){seen++;const x=extOf(name);if(RAW_EXT.has(x))raw++;else if(JPG_EXT.has(x))jpg++;}
+      else if(depth<2)await walk(h,depth+1);
+    }
+  }
+  try{await walk(handle,0);}catch(e){}
+  return{raw,jpg};
+}
+function getDroppedDirs(e){
+  const items=[...(e.dataTransfer?e.dataTransfer.items:[])].filter(i=>i.kind==='file');
+  if(items.length&&!items[0].getAsFileSystemHandle)return Promise.resolve(null);
+  const ps=items.map(i=>Promise.resolve(i.getAsFileSystemHandle()).catch(()=>null));
+  return Promise.all(ps).then(hs=>hs.filter(h=>h&&h.kind==='directory'));
+}
+const dragHL=(id,on)=>$(id).classList.toggle('drop-on',on);
+async function onDrop(e,forced){
+  e.preventDefault();e.stopPropagation();
+  dragN=0;$('dropOverlay').hidden=true;['zone-raw','zone-jpg'].forEach(i=>dragHL(i,false));
+  if(state.view!=='setup')return;
+  const dirs=await getDroppedDirs(e);
+  if(dirs===null){dropMsg('当前浏览器不支持拖拽文件夹，请用 Chrome 或 Edge，或者点击上面的方框选择。','warn');return;}
+  if(!dirs.length){dropMsg('没有识别到文件夹。请拖整个文件夹，而不是里面的文件。','warn');return;}
+  if(isSame()){
+    const h=dirs[0],s=await sampleDir(h);setFolder('raw',h);
+    const nm='「'+h.name+'」';
+    if(!s.raw&&!s.jpg)dropMsg(nm+'里没有找到照片。','warn');
+    else if(!s.jpg)dropMsg(nm+'里只有 RAW，没找到 JPG。','warn');
+    else if(!s.raw)dropMsg(nm+'里只有 JPG，没找到 RAW。','warn');
+    return;
+  }
+  const msgs=[];let warn=false;
+  if(forced&&dirs.length===1){
+    const h=dirs[0],s=await sampleDir(h),nm='「'+h.name+'」';
+    const other=forced==='raw'?'jpg':'raw';
+    const lab=k=>k==='raw'?'RAW 文件夹':'JPG 文件夹';
+    if(s[forced]>0){setFolder(forced,h);}
+    else if(s[other]>0){setFolder(other,h);msgs.push(nm+'里是'+(other==='raw'?'RAW':'JPG')+'，已自动放到“'+lab(other)+'”。');}
+    else{warn=true;msgs.push(nm+'里没有找到照片，没有设置。');}
+  }else{
+    const used=new Set();
+    for(const h of dirs.slice(0,2)){
+      const s=await sampleDir(h);let kind=null;
+      if(s.raw>s.jpg)kind='raw';else if(s.jpg>s.raw)kind='jpg';
+      else if(s.raw>0)kind=(!state.raw&&!used.has('raw'))?'raw':'jpg';
+      if(!kind||used.has(kind)){warn=true;msgs.push('「'+h.name+'」'+(kind?'和另一个文件夹的类型相同，已忽略':'里没有找到照片')+'。');continue;}
+      used.add(kind);setFolder(kind,h);
+    }
+    if(dirs.length>2){warn=true;msgs.push('一次最多拖 2 个文件夹，多出的已忽略。');}
+  }
+  if(msgs.length)dropMsg(msgs.join(' '),warn?'warn':'ok');
+}
+let dragN=0;
+const hasFiles=e=>e.dataTransfer&&[...e.dataTransfer.types].includes('Files');
+document.addEventListener('dragenter',e=>{if(!hasFiles(e))return;e.preventDefault();dragN++;if(state.view==='setup')$('dropOverlay').hidden=false;});
+document.addEventListener('dragleave',e=>{if(!hasFiles(e))return;dragN=Math.max(0,dragN-1);if(!dragN)$('dropOverlay').hidden=true;});
+document.addEventListener('dragover',e=>{e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';});
+document.addEventListener('drop',e=>onDrop(e,null));
+for(const [id,forced] of [['zone-raw','raw'],['zone-jpg','jpg']]){
+  const el=$(id);
+  el.addEventListener('dragover',e=>{e.preventDefault();dragHL(id,true);});
+  el.addEventListener('dragleave',e=>{if(!el.contains(e.relatedTarget))dragHL(id,false);});
+  el.addEventListener('drop',e=>onDrop(e,forced));
+}
+
+/* ---------- 结果：状态判断 ---------- */
+const isCfl=r=>!!(r.raw&&!r.confirmed&&IMG.conflict(r));
+const isWarn=r=>!!(r.raw&&r.level==='warn'&&!r.confirmed);
+const rank=r=>isCfl(r)?0:isWarn(r)?1:!r.raw?2:3;
+const MNAME={name:'文件名',contain:'名字包含',time:'拍摄时间',image:'画面找回',manual:'手动改配'};
+const FILTERS={all:()=>true,warn:r=>isWarn(r),bad:r=>!r.raw,ok:r=>r.raw&&!isWarn(r)};
+
+function cardHTML(r,i){
+  const m=!!r.raw,cfl=isCfl(r),warn=isWarn(r);
+  const cls='cd'+(!m?' bad':cfl?' cfl':warn?' warn':'')+(m&&!r.include?' off':'');
+  const th=(u,l)=>'<div class="th">'+(u?'<img loading="lazy" decoding="async" alt="" src="'+u+'">':'<div class="noimg">无预览</div>')+'<span class="tg">'+l+'</span></div>';
+  const pair=th(r.jpgPic,'JPG')+(m?th(r.rawPic,'RAW'):'<div class="th miss"><div class="noimg">未找到 RAW</div></div>');
+  const ck=m?'<button class="ck" data-act="ck" aria-pressed="'+(r.include?'true':'false')+'" aria-label="是否导出这张的 RAW">'+ico.check+'</button>':'';
+  let bd='';
+  if(m){
+    bd+='<span class="bdg '+r.method+'">'+(MNAME[r.method]||'')+'</span>';
+    if(cfl)bd+='<span class="bdg bad">名字一致·画面不符</span>';
+    else if(warn)bd+='<span class="bdg warn">需确认</span>';
+    else if(r.confirmed)bd+='<span class="bdg good">已确认</span>';
+    else if(r.imgDist!=null&&r.imgDist<=IMG.th())bd+='<span class="bdg good">画面一致</span>';
+  }else bd='<span class="bdg bad">未找到</span>';
+  const n2=m?'→ '+esc(r.raw.name):'<span class="err">'+esc(r.note||'没有找到对应的 RAW')+'</span>';
+  return '<article class="'+cls+'" data-i="'+i+'" tabindex="0" title="'+esc(r.note||'')+'"><div class="pair">'+pair+ck+'</div>'
+    +'<div class="inf"><div class="n1">'+esc(r.jpg.name)+'</div><div class="n2'+(m?'':' err')+'">'+n2+'</div><div class="bd">'+bd+'</div></div></article>';
+}
+const visibleIdx=()=>{
+  const f=FILTERS[state.filter]||FILTERS.all;
+  const idx=[];state.results.forEach((r,i)=>{if(f(r))idx.push(i);});
+  if(state.filter==='all'||state.filter==='warn')idx.sort((a,b)=>rank(state.results[a])-rank(state.results[b])||a-b);
+  return idx;
+};
+function counts(){
+  const R=state.results,matched=R.filter(r=>r.raw),warn=matched.filter(isWarn);
+  return{n:R.length,matched:matched.length,un:R.length-matched.length,warn:warn.length,cfl:matched.filter(isCfl).length,ok:matched.length-warn.length};
+}
+function renderChips(c){
+  const defs=[['all','全部',c.n,''],['warn','需确认',c.warn,'t-warn'],['bad','未找到',c.un,'t-bad'],['ok','正常',c.ok,'']];
+  $('chips').innerHTML=defs.map(d=>'<button class="chip '+d[3]+(state.filter===d[0]?' on':'')+(d[2]?'':' zero')+'" data-f="'+d[0]+'">'+d[1]+'<em>'+d[2]+'</em></button>').join('');
+}
+function renderAttn(c){
+  const R=state.results,at=$('attn');
+  if(!R.length){at.hidden=true;return;}
+  const cnt=m=>R.filter(r=>r.raw&&r.method===m).length;
+  const meth='文件名 '+cnt('name')+' · 名字包含 '+cnt('contain')+' · 拍摄时间 '+cnt('time')+' · 画面找回 '+cnt('image')+(cnt('manual')?' · 手动 '+cnt('manual'):'');
+  const todo=c.warn+c.un;
+  at.hidden=false;at.className='attn'+(todo?' warn':'');
+  if(todo){
+    at.innerHTML='<div class="ai">'+ico.warn+'</div><div class="at"><b>'+(c.warn?c.warn+' 张需要确认':'')+(c.warn&&c.un?'，':'')+(c.un?c.un+' 张没找到 RAW':'')+'</b><div class="as">其余 '+c.ok+' 张匹配稳定。（'+meth+'）</div></div><button class="btn primary" id="startReview">逐张核对</button>';
+  }else{
+    at.innerHTML='<div class="ai">'+ico.ok+'</div><div class="at"><b>全部 '+c.n+' 张都匹配稳定</b><div class="as">没有需要确认的，可以直接导出。（'+meth+'）</div></div>';
+  }
+}
+function render(){
+  const c=counts();
+  renderChips(c);renderAttn(c);
+  const nb=$('rawNoTimeBanner');
+  if(state.rawNoTime>0){nb.hidden=false;nb.textContent='有 '+state.rawNoTime+' 个 RAW 读不出拍摄时间，这些只能靠文件名匹配。';}else nb.hidden=true;
+  const idx=visibleIdx();
+  $('grid').innerHTML=idx.length?idx.map(i=>cardHTML(state.results[i],i)).join(''):'<div class="empty">'+(state.results.length?'这一类里没有照片':'还没有匹配结果')+'</div>';
+  $('checkAll').checked=c.matched>0&&state.results.every(r=>!r.raw||r.include);
+  updateExportCount();
+}
+function refreshLive(){ // 勾选变化时只刷新计数，不重绘网格
+  const c=counts();renderChips(c);renderAttn(c);
+  $('checkAll').checked=c.matched>0&&state.results.every(r=>!r.raw||r.include);
+  updateExportCount();
+}
+$('chips').onclick=e=>{const b=e.target.closest('[data-f]');if(!b)return;state.filter=b.dataset.f;render();};
+$('viewReview').addEventListener('click',e=>{
+  if(e.target.closest('#startReview')){openLb(attnList()[0],attnList());return;}
+});
+function attnList(){
+  const idx=[];state.results.forEach((r,i)=>{if(isWarn(r)||!r.raw)idx.push(i);});
+  return idx.sort((a,b)=>rank(state.results[a])-rank(state.results[b])||a-b);
+}
+$('grid').addEventListener('click',e=>{
+  const card=e.target.closest('.cd');if(!card)return;
+  const i=+card.dataset.i;
+  if(e.target.closest('[data-act=ck]')){toggleInclude(i,card);return;}
+  openLb(i,visibleIdx());
+});
+$('grid').addEventListener('keydown',e=>{
+  const card=e.target.closest&&e.target.closest('.cd');if(!card||e.target!==card)return;
+  if(e.key==='Enter'){e.preventDefault();openLb(+card.dataset.i,visibleIdx());}
+  else if(e.key===' '&&state.results[+card.dataset.i].raw){e.preventDefault();toggleInclude(+card.dataset.i,card);}
+});
+function toggleInclude(i,card){
+  const r=state.results[i];if(!r.raw)return;
+  r.include=!r.include;
+  if(card){card.classList.toggle('off',!r.include);card.querySelector('.ck').setAttribute('aria-pressed',r.include?'true':'false');}
+  refreshLive();
+}
+$('checkAll').onchange=e=>{state.results.forEach(r=>{if(r.raw)r.include=e.target.checked;});render();};
+$('sizeRange').oninput=e=>document.documentElement.style.setProperty('--min',e.target.value+'px');
+
+/* ---------- 核对台 ---------- */
+const LB={list:[],pos:0,tok:0,urls:[],dirty:false};
+function openLb(i,list){
+  if(i==null||!list||!list.length)return;
+  LB.list=list.slice();LB.pos=Math.max(0,LB.list.indexOf(i));LB.dirty=false;
+  $('lb').hidden=false;document.body.style.overflow='hidden';lbShow();
+}
+function closeLb(){
+  LB.tok++;LB.urls.forEach(u=>URL.revokeObjectURL(u));LB.urls=[];
+  $('lb').hidden=true;document.body.style.overflow='';
+  $('lbJpg').removeAttribute('src');$('lbRaw').removeAttribute('src');
+  render();
+}
+function setImg(id,url,orient){
+  const im=$(id);
+  if(url){im.src=url;im.style.imageOrientation=orient||'none';im.style.visibility='visible';}
+  else{im.removeAttribute('src');im.style.visibility='hidden';}
+}
+const preload=u=>new Promise((res,rej)=>{const im=new Image();im.onload=()=>res();im.onerror=rej;im.src=u;});
+async function loadBig(r){
+  const tok=++LB.tok;
+  const old=LB.urls;LB.urls=[];
+  const put=(id,url,orient)=>{if(tok!==LB.tok){URL.revokeObjectURL(url);return;}LB.urls.push(url);setImg(id,url,orient);};
+  // 两边都用「不套用 EXIF 方向」的原像素，和画面对齐算法一致；对不上方向的情况保留已对齐的缩略图
+  const aligned=!r.raw||!r.imgMode;
+  const jobs=[];
+  if(aligned)jobs.push((async()=>{
+    try{const u=URL.createObjectURL(await getFile(r.jpg));await preload(u);put('lbJpg',u,r.raw?'none':'from-image');}catch(e){}
+  })());
+  if(r.raw&&aligned)jobs.push((async()=>{
+    try{const u=await IMG.bigRaw(r.raw);if(!u)return;try{await preload(u);}catch(e){URL.revokeObjectURL(u);return;}put('lbRaw',u,'none');}catch(e){}
+  })());
+  await Promise.all(jobs);
+  setTimeout(()=>old.forEach(u=>URL.revokeObjectURL(u)),1500);
+}
+function statusChip(r){
+  if(!r.raw)return '<span class="bdg bad">未找到</span>';
+  if(isCfl(r))return '<span class="bdg bad">名字一致·画面不符</span>';
+  if(isWarn(r))return '<span class="bdg warn">需确认</span>';
+  return r.confirmed?'<span class="bdg good">已确认</span>':'<span class="bdg good">正常</span>';
+}
+function lbShow(){
+  const i=LB.list[LB.pos],r=state.results[i];if(!r)return;
+  const m=!!r.raw;
+  $('lbPos').textContent=(LB.pos+1)+' / '+LB.list.length;
+  $('lbStatus').innerHTML=statusChip(r);
+  $('lbTitle').textContent=r.jpg.path+(m?'  →  '+r.raw.path:'');
+  setImg('lbJpg',r.jpgPic,'none');
+  $('lbRawPane').classList.toggle('none',!m);
+  setImg('lbRaw',m?r.rawPic:null,'none');
+  $('lbJpgName').textContent=r.jpg.name;
+  $('lbRawName').textContent=m?r.raw.name:'未找到';
+  const tm=t=>t==null?'读不到拍摄时间':new Date(t).toISOString().replace('T',' ').slice(0,19);
+  $('lbJpgInfo').textContent=tm(r.jpg.t);
+  $('lbRawInfo').textContent=m?tm(r.raw.t):'';
+  let info='';
+  if(m){
+    info+='<span class="bdg '+r.method+'">'+(MNAME[r.method]||'')+'</span>';
+    if(r.imgDist!=null)info+='<span class="bdg '+(r.imgDist>IMG.th()?'bad':'good')+'">画面距离 '+r.imgDist+'</span>';
+    if(r.diff!=null)info+='<span class="bdg">时间差 '+fmtSec(r.diff)+'</span>';
+  }
+  if(r.note)info+='<span>'+esc(r.note)+'</span>';
+  $('lbInfo').innerHTML=info;
+  // 候选 RAW
+  const usedBy=new Map();state.results.forEach(x=>{if(x.raw&&x!==r)usedBy.set(x.raw,x.jpg.name);});
+  const cs=r._cands||[];
+  if(cs.length){
+    $('lbCands').innerHTML='<div class="ct">'+(m?'不对？点选画面最接近的其他 RAW 来改配':'点选一个画面最接近的 RAW 来配对')+'</div><div class="cstrip">'
+      +cs.map((c,k)=>'<button class="cand'+(c.r===r.raw?' cur':'')+'" data-k="'+k+'" title="'+esc(c.r.path)+(usedBy.has(c.r)?'（已配给 '+esc(usedBy.get(c.r))+'）':'')+'">'
+        +(c.r._img?'<img alt="" src="'+c.r._img.pic+'">':'<div class="noimg">无预览</div>')
+        +'<div class="cn1">'+esc(c.r.name)+'</div><div class="cn2">距离 '+c.d+(usedBy.has(c.r)?' · 已被占用':'')+'</div></button>').join('')+'</div>';
+  }else $('lbCands').innerHTML='';
+  $('lbUnpair').hidden=!m;
+  $('lbDrop').hidden=!m;$('lbDrop').firstChild.textContent=(m&&!r.include)?'恢复导出这张':'不导出这张';
+  $('lbKeep').firstChild.textContent=m?'确认，下一张':'跳过，下一张';
+  $('lbPrev').disabled=LB.pos===0;$('lbNext').disabled=LB.pos===LB.list.length-1;
+  loadBig(r);
+}
+function lbMove(d){const p=LB.pos+d;if(p<0||p>=LB.list.length)return false;LB.pos=p;lbShow();return true;}
+function lbNextOrClose(){if(!lbMove(1))closeLb();}
+$('lbPrev').onclick=()=>lbMove(-1);
+$('lbNext').onclick=()=>lbMove(1);
+$('lbClose').onclick=closeLb;
+$('lbKeep').onclick=()=>{const r=state.results[LB.list[LB.pos]];if(r.raw){r.include=true;r.confirmed=true;LB.dirty=true;}lbNextOrClose();};
+$('lbDrop').onclick=()=>{
+  const r=state.results[LB.list[LB.pos]];if(!r.raw)return;
+  if(r.include){r.include=false;r.confirmed=true;LB.dirty=true;lbNextOrClose();}
+  else{r.include=true;LB.dirty=true;lbShow();}
+};
+$('lbUnpair').onclick=()=>{
+  const r=state.results[LB.list[LB.pos]];
+  r.raw=null;r.method=null;r.diff=null;r.level='';r.confirmed=false;r.rawPic=null;r.imgDist=null;r.note='已取消配对';
+  LB.dirty=true;lbShow();
+};
+$('lbCands').onclick=e=>{
+  const b=e.target.closest('.cand');if(!b)return;
+  const r=state.results[LB.list[LB.pos]],c=r._cands[+b.dataset.k];if(!c)return;
+  r.raw=c.r;r.method='manual';r.imgDist=c.d;r.imgMode=c.m;r.include=true;r.confirmed=false;
+  r.jpgPic=r._j?r._j.pics[c.m]:r.jpgPic;r.rawPic=c.r._img?c.r._img.pic:null;
+  r.level='';r.note='手动改配（画面距离 '+c.d+'）';
+  const off=(parseFloat($('offset').value)||0)*1000;
+  r.diff=(r.jpg.t!=null&&c.r.t!=null)?r.jpg.t+off-c.r.t:null;
+  LB.dirty=true;lbShow();
+};
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(!$('lb').hidden)closeLb();
+    else if(!$('exportOv').hidden)closeOv('exportOv');
+    else if(!$('drawerOv').hidden)closeOv('drawerOv');
+    return;
+  }
+  if($('lb').hidden)return;
+  if(e.key==='ArrowLeft'){e.preventDefault();lbMove(-1);}
+  else if(e.key==='ArrowRight'){e.preventDefault();lbMove(1);}
+  else if(e.key==='Enter'&&document.activeElement.tagName!=='BUTTON'){e.preventDefault();$('lbKeep').click();}
+  else if((e.key==='x'||e.key==='X')&&!$('lbDrop').hidden){e.preventDefault();$('lbDrop').click();}
+});
+
+/* ---------- 导出条 ---------- */
+function exportRaws(){
+  const set=new Set();
+  state.results.forEach(r=>{if(r.raw&&r.include)set.add(r.raw);});
+  return [...set];
+}
+function updateExportCount(){
+  const n=exportRaws().length;
+  $('xCount').textContent=n;$('heroCount').textContent=n;
+  $('exportCount').textContent='个 RAW 将被复制（不会移动或删除原文件）';
+  $('copyBtn').textContent=hasFS?'导出 '+n+' 个 RAW':'导出（需 Chrome / Edge）';
+  $('copyBtn').disabled=n===0;
+  $('winScriptBtn').disabled=n===0;$('macScriptBtn').disabled=n===0;
+}
+function refreshOutPath(){
+  const nm=cleanFolderName($('outName').value);
+  const t=state.out?state.out.label:'默认 · '+(isSame()?'':'JPG 文件夹里的')+'「'+nm+'」';
+  $('outPath').textContent=t;$('outPathBox').textContent=t;$('outPathBox').classList.toggle('set',!!state.out);
+  $('nameRow').hidden=!!state.out;$('outResetBtn').hidden=!state.out;
+}
+function openedExportOrCopy(){hasFS?copyRaws():openOv('exportOv');}
+
+$('startBtn').onclick=startMatch;
+
+function download(name,text,mime){
+  const blob=new Blob([text],{type:mime});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+const csvCell=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';
+$('csvBtn').onclick=()=>{
+  const head=['JPG文件名','JPG路径','RAW文件名','RAW路径','匹配方式','时间差(秒)','画面距离','画面校验','备注'];
+  const lines=[head.map(csvCell).join(',')];
+  const mname={name:'文件名',contain:'名字包含',time:'拍摄时间',image:'画面',manual:'手动改配'};
+  state.results.forEach(r=>{
+    lines.push([r.jpg.name,r.jpg.path,r.raw?r.raw.name:'',r.raw?r.raw.path:'',r.raw?mname[r.method]:'未匹配',r.diff!=null?(r.diff/1000).toFixed(2):'',r.imgDist!=null?r.imgDist:'',r.imgDist==null?'':(r.imgDist<=IMG.th()?'一致':'不符'),r.note].map(csvCell).join(','));
+  });
+  download('RAW对照表.csv','\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8');
+};
+$('rawListBtn').onclick=()=>{
+  const names=exportRaws().map(r=>r.name);
+  if(!names.length){alert('没有可导出的 RAW');return;}
+  download('RAW文件名清单.txt',names.join('\r\n'),'text/plain;charset=utf-8');
+};
+$('unmatchedBtn').onclick=()=>{
+  const names=state.results.filter(r=>!r.raw).map(r=>r.jpg.name);
+  if(!names.length){alert('没有未匹配的 JPG，全部都找到对应 RAW 了');return;}
+  download('未匹配JPG清单.txt',names.join('\r\n'),'text/plain;charset=utf-8');
+};
+
+function addSuffix(name,n){return name.replace(/(\.[^.]*)?$/,m=>'_'+n+(m||''));}
+function cleanFolderName(s){
+  s=(s||'').replace(/[\\\/:*?"<>|]/g,'').trim().replace(/[. ]+$/,'');
+  return s||'选片RAW';
+}
+async function ensureWrite(handle){
+  const opt={mode:'readwrite'};
+  if((await handle.queryPermission(opt))==='granted')return true;
+  return (await handle.requestPermission(opt))==='granted';
+}
+async function copyRaws(){
+  const list=exportRaws();
+  if(!list.length){alert('没有可导出的 RAW');return;}
+  let dest,destLabel;
+  try{
+    if(state.out){
+      dest=state.out.handle;destLabel=state.out.label;
+      if(!(await ensureWrite(dest))){alert('没有获得写入权限，无法写入这个文件夹。');return;}
+    }else{
+      const js=jpgSrc();
+      if(!js||js.type!=='handle'){alert('请先选择文件夹，或者在"导出文件夹"里选一个位置。');return;}
+      const parent=js.handle;
+      if(!(await ensureWrite(parent))){alert('没有获得写入权限，无法在 JPG 文件夹里新建文件夹。可以点"导出文件夹"右边的"选择"，换一个位置。');return;}
+      destLabel=cleanFolderName($('outName').value);
+      dest=await parent.getDirectoryHandle(destLabel,{create:true});
+    }
+  }catch(e){
+    if(e.name!=='AbortError')alert('无法使用这个文件夹：'+e.message+'\n请换一个位置，最好是新建的文件夹（不要选盘符根目录，或桌面、"下载"文件夹本身）。');
+    return;
+  }
+
+  state.cancel=false;
+  $('copyBtn').disabled=true;$('pickOut').disabled=true;$('cancelBtn').hidden=false;
+  $('copyProg').hidden=false;$('copyFails').textContent='';
+  $('copyStatus').textContent='正在准备…';$('copyBar').style.width='0%';
+  const files=new Array(list.length);
+  let totalBytes=0;
+  await pool(list,8,async(it,i)=>{try{files[i]=await getFile(it);totalBytes+=files[i].size;}catch(e){files[i]=null;}});
+  const MB=1048576,CHUNK=16*MB;
+  const t0=performance.now();
+  let ok=0,skip=0,doneBytes=0,doneFiles=0;
+  const fails=[];const used=new Set();
+  const fmtMB=b=>(b/MB).toFixed(b>=100*MB?0:1);
+  const refreshStatus=name=>{
+    const sec=Math.max((performance.now()-t0)/1000,0.001);
+    $('copyStatus').textContent='正在复制 '+(name||'')+'（已完成 '+doneFiles+'/'+list.length+'）· '+fmtMB(doneBytes)+' / '+fmtMB(totalBytes)+' MB · '+(doneBytes/MB/sec).toFixed(0)+' MB/s';
+    $('copyBar').style.width=(totalBytes?doneBytes/totalBytes*100:doneFiles/list.length*100)+'%';
+  };
+  async function copyOne(it,file){
+    let finalName=it.name,n=0;
+    for(;;){
+      const low=finalName.toLowerCase();
+      if(!used.has(low)){
+        used.add(low);
+        let h=null;
+        try{h=await dest.getFileHandle(finalName);}catch(e){h=null;}
+        if(!h)break;
+        const ef=await h.getFile();
+        if(ef.size===file.size){skip++;doneBytes+=file.size;return;}
+      }
+      n++;finalName=addSuffix(it.name,n);
+    }
+    const fh=await dest.getFileHandle(finalName,{create:true});
+    const w=await fh.createWritable();
+    try{
+      for(let off=0;off<file.size;off+=CHUNK){
+        if(state.cancel)throw new Error('已停止');
+        const end=Math.min(off+CHUNK,file.size);
+        await w.write(file.slice(off,end));
+        doneBytes+=end-off;
+        refreshStatus(it.name);
+      }
+      await w.close();
+    }catch(e){
+      try{await w.abort();}catch(_){}
+      throw e;
+    }
+    ok++;
+  }
+  await pool(list.map((_,i)=>i),2,async i=>{
+    if(state.cancel)return;
+    const it=list[i];
+    try{
+      if(!files[i])throw new Error('读不到这个文件');
+      refreshStatus(it.name);
+      await copyOne(it,files[i]);
+    }catch(e){
+      if(!state.cancel)fails.push(it.name+'：'+(e&&e.message?e.message:e));
+    }
+    doneFiles++;
+    refreshStatus('');
+  });
+  const secs=(performance.now()-t0)/1000;
+  if(!state.cancel)$('copyBar').style.width='100%';
+  $('copyStatus').textContent=(state.cancel?'已停止。':'完成。')+'复制 '+ok+' 个，已存在跳过 '+skip+' 个，失败 '+fails.length+' 个，用时 '+secs.toFixed(1)+' 秒（平均 '+(doneBytes/MB/Math.max(secs,0.001)).toFixed(0)+' MB/s）。保存在「'+destLabel+'」文件夹里。';
+  $('copyFails').textContent=fails.join('\n');
+  toast((state.cancel?'已停止':'导出完成')+'：复制 '+ok+' 个'+(skip?'，跳过已存在 '+skip+' 个':'')+(fails.length?'，失败 '+fails.length+' 个':'')+'，保存在「'+destLabel+'」',fails.length?'warn':'ok');
+  $('cancelBtn').hidden=true;
+  $('pickOut').disabled=!hasFS;
+  updateExportCount();
+}
+$('pickOut').onclick=async()=>{
+  try{
+    const h=await window.showDirectoryPicker({id:'out',mode:'readwrite'});
+    state.out={handle:h,label:h.name};
+    refreshOutPath();
+  }catch(e){
+    if(e.name!=='AbortError')alert('无法使用这个文件夹：'+e.message+'\n请换一个位置，最好是新建的文件夹（不要选盘符根目录，或桌面、"下载"文件夹本身）。');
+  }
+};
+$('outResetBtn').onclick=()=>{state.out=null;refreshOutPath();};
+$('outName').oninput=refreshOutPath;
+$('copyBtn').onclick=openedExportOrCopy;
+$('cancelBtn').onclick=()=>{state.cancel=true;};
+/* ---------- 复制脚本 ---------- */
+function exportScript(kind){
+  const list=exportRaws();
+  if(!list.length){alert('没有可导出的 RAW');return;}
+  const out=cleanFolderName($('outName').value);
+  const paths=list.map(r=>r.path);
+  if(kind==='win'){
+    const L=['@echo off','chcp 65001 >nul','cd /d "%~dp0"','set "OUT='+out.replace(/%/g,'%%')+'"',
+      'if not exist "%OUT%" mkdir "%OUT%"',
+      'echo 正在复制 '+paths.length+' 个 RAW 到文件夹 %OUT% ...','set /a OK=0','set /a FAIL=0'];
+    for(const p of paths){
+      const w=p.replace(/\//g,'\\').replace(/%/g,'%%');
+      L.push('copy /y "'+w+'" "%OUT%\\" >nul 2>nul && (set /a OK+=1 >nul) || (set /a FAIL+=1 >nul & echo 复制失败："'+w+'")');
+    }
+    L.push('echo.','echo 完成：成功 %OK% 个，失败 %FAIL% 个。','echo 文件在这个文件夹里的「%OUT%」文件夹中。','pause');
+    download('复制选片RAW.bat',L.join('\r\n')+'\r\n','text/plain;charset=utf-8');
+  }else{
+    const q=s=>"'"+s.replace(/'/g,"'\\''")+"'";
+    const L=['#!/bin/bash','cd "$(dirname "$0")" || exit 1','OUT='+q(out),'mkdir -p "$OUT"','copyone(){ cp -pc "$1" "$OUT/" 2>/dev/null || cp -p "$1" "$OUT/"; }','ok=0','fail=0',
+      'echo '+q('正在复制 '+paths.length+' 个 RAW 到文件夹 '+out+' ...')];
+    for(const p of paths){
+      L.push('copyone '+q(p)+' && ok=$((ok+1)) || { echo '+q('复制失败：')+' '+q(p)+'; fail=$((fail+1)); }');
+    }
+    L.push('echo','echo "完成：成功 $ok 个，失败 $fail 个。"','read -n 1 -s -r -p "按任意键关闭…"','echo');
+    download('复制选片RAW.command',L.join('\n')+'\n','text/plain;charset=utf-8');
+  }
+}
+$('winScriptBtn').onclick=()=>exportScript('win');
+$('macScriptBtn').onclick=()=>exportScript('mac');
+
+applySame();
+refreshOutPath();
+updateExportCount();
+
+</script>
+</body>
+</html>
