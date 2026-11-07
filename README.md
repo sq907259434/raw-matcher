@@ -13,7 +13,7 @@
 | **Windows 10/11 64 位** · **v1.1** · 8.2 MB · 推荐 | **[⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.1-win64.exe)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.1-win64.exe) |
 | Windows 10/11 64 位 · v1.0 · 8.2 MB · 旧版 | [⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.0-win64.exe) | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.0-win64.exe) |
 | **macOS 通用版** · v1.3 · 0.7 MB | **[⬇ dmg](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-1.3-macos-universal.dmg)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-1.3-macos-universal.dmg) |
-| **纯网页版** · 任意系统 · 59 KB | **[⬇ html](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-web.html)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-web.html) |
+| **纯网页版** · 任意系统 · 84 KB | **[⬇ html](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-web.html)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-web.html) |
 
 [发布页](https://github.com/sq907259434/raw-matcher/releases/latest)里有完整的更新说明和校验值。国内直连 GitHub 下载容易卡住，用镜像列（同一个文件，已核对 SHA-256）。v1.1 与 v1.0 放在同一个 Release，旧直链不会失效。
 
@@ -31,7 +31,7 @@
 Windows v1.1 exe  23804e7e1d12be7fd226a12d2efd4812d54e1afc35f779588a392bd5ff82d1fa
 Windows v1.0 exe  7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
 macOS  dmg        95dfed3fbec1972dc80002460c15b6aeeade698f3e4c46bea619b42f0a54e15c
-网页版 html       a5566ca5a92359f436b12030cb3338e7100173910d349a1ea139a3be45db380b
+网页版 html       b73d6f4e636453763ae393d11171247f3bfa3898b56b260042b5c00c1e829def
 ```
 
 ## 它解决什么问题
@@ -145,7 +145,8 @@ windows/            Windows 桌面版（macOS 版只在 Release 提供成品 DMG
   ui.html           桌面版界面（与网页版不同源）
   app.ico / make_icon.py / build.bat
 web/
-  JPG选RAW.html     纯网页版，双击即用
+  JPG选RAW.html     纯网页版主文件，双击即用（当前为 v2）
+  jpg-RAW-v2.html   v2 留档，内容与上一行完全相同
 tests/
   selftest_droptarget.py   拖拽层单元测试（9 例，需 Windows）
   screenshot.py            截屏小工具
