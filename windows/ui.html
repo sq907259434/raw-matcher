@@ -690,9 +690,11 @@ const IMG = (function () {
       if (u8.length < n) break;
     }
     if (!best) return null;
-    const hash = drawHash(best, 0), pic = drawThumb(best, 0);
+    // RAW 预览也备齐 8 个方向：hash 用于匹配，pic 用于「按 JPG 方向旋转对齐」显示。
+    const hashes = [], pics = [];
+    for (let m = 0; m < CFG.NMODE; m++) { hashes.push(drawHash(best, m)); pics.push(drawThumb(best, m)); }
     if (best.close) best.close();
-    return { hash: hash, pic: pic };
+    return { hash: hashes[0], hashes: hashes, pic: pics[0], pics: pics };
   }
   async function jpgInfo(item) {
     const f = await getFile(item);
@@ -706,13 +708,14 @@ const IMG = (function () {
     for (let m = 0; m < CFG.NMODE; m++) { hashes.push(drawHash(bmp, m)); pics.push(drawThumb(bmp, m)); }
     if (bmp.close) bmp.close();
     // 显示基准：按 JPG 自己的 EXIF 方向转正。客户挑的就是这张，方向以它为主。
-    let picBase = pics[0];
+    let picBase = pics[0], baseHash = hashes[0];
     try {
       const ob = await createImageBitmap(blob, { imageOrientation: 'from-image' });
       picBase = drawThumb(ob, 0);
+      baseHash = drawHash(ob, 0);   // RAW 旋转对齐时拿它当参照
       if (ob.close) ob.close();
     } catch (e) { /* 不支持 from-image 的老内核退回原像素 */ }
-    return { hashes: hashes, pics: pics, picBase: picBase };
+    return { hashes: hashes, pics: pics, picBase: picBase, baseHash: baseHash };
   }
 
   async function enhance(results, raws) {
@@ -774,30 +777,54 @@ const IMG = (function () {
       }
       it.imgDist = best ? best.d : null;
       it.imgMode = best ? best.m : 0;
-      // 显示以 JPG 为主：JPG 永远用它自己 EXIF 转正后的方向，不再因匹配结果被旋转或镜像；
-      // RAW 内嵌预览保持相机写好的原方向。8 方向只用于算距离，不参与显示。
+      // JPG 不动：永远显示客户看到的方向。RAW 预览从 8 方向里挑最贴近这张 JPG 的一张，
+      // 旋转/翻转都作用在 RAW 侧，两边方向就一致了。
       it.jpgPic = it._j ? (it._j.picBase || it._j.pics[0]) : null;
-      it.rawPic = it.raw._img ? it.raw._img.pic : null;
+      let rm = 0, rd = 256;
+      if (it.raw._img && it._j) {
+        const ref = it._j.baseHash || it._j.hashes[0];
+        const hs = it.raw._img.hashes || [it.raw._img.hash];
+        for (let n = 0; n < hs.length; n++) {
+          const d = ham(hs[n], ref);
+          if (d < rd) { rd = d; rm = n; }
+        }
+      }
+      it.rawMode = rm;
+      it.rawPic = it.raw._img ? (it.raw._img.pics ? it.raw._img.pics[rm] : it.raw._img.pic) : null;
       if (best && best.d > T) {
         it.level = 'warn';
         it.note += (it.note ? '；' : '') + '画面与 RAW 预览对不上（距离 ' + best.d + '），请看图确认';
       } else if (it.method === 'image') {
         it.note += (it.note ? '；' : '') + '按画面找回（距离 ' + (best ? best.d : '?') + '）';
       }
-      if (it.method !== 'image' && best && best.m) {
-        it.note += (it.note ? '；' : '') + 'RAW 预览与 JPG 有方向差（' + MODE_NAME[best.m] + '），两边均按 JPG 方向显示';
+      if (rm) {
+        it.note += (it.note ? '；' : '') + 'RAW 缩览图已旋转对齐 JPG（' + MODE_NAME[rm] + '）';
       }
     }
     for (const it of results) if (!it.jpgPic && it._j) it.jpgPic = it._j.pics[0];
   }
 
-  // 核对台用：取 RAW 里最大的那张内嵌 JPEG 预览（只在打开大图时才读，不影响匹配速度）
-  async function bigRaw(item) {
+  // 核对台用：取 RAW 里最大的那张内嵌 JPEG 预览（只在打开大图时才读，不影响匹配速度）。
+  // mode != 0 时按缩览图选中的同一方向旋转/翻转，放大后方向才不会又横过来。
+  async function bigRaw(item, mode) {
     const f = await getFile(item);
     const u8 = new Uint8Array(await f.slice(0, CFG.readCap).arrayBuffer());
     let best = null;
     for (const s of jpegSegments(u8)) if (!best || s.length > best.length) best = s;
-    return best ? URL.createObjectURL(new Blob([best], { type: 'image/jpeg' })) : null;
+    if (!best) return null;
+    const rawBlob = new Blob([best], { type: 'image/jpeg' });
+    if (!mode) return URL.createObjectURL(rawBlob);
+    let bmp;
+    try { bmp = await decode(rawBlob); }
+    catch (e) { return URL.createObjectURL(rawBlob); }
+    const swap = mode >= 4;
+    const W = swap ? bmp.height : bmp.width, H = swap ? bmp.width : bmp.height;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    xform(x, bmp, mode, W, H, bmp.width, bmp.height);
+    if (bmp.close) bmp.close();
+    return await new Promise(res => c.toBlob(
+      b => res(URL.createObjectURL(b || rawBlob)), 'image/jpeg', 0.92));
   }
   // 「名字一致但画面不符」：靠名字配上 + 画面距离超阈值 + 仍需确认。
   // 纯展示判据，不改 include / method / 匹配结果；手动改配后 level 已清空，不会再进这组。
@@ -1248,7 +1275,7 @@ async function loadBig(r){
     try{const u=URL.createObjectURL(await getFile(r.jpg));await preload(u);put('lbJpg',u,'from-image');}catch(e){}
   })());
   if(r.raw)jobs.push((async()=>{
-    try{const u=await IMG.bigRaw(r.raw);if(!u)return;try{await preload(u);}catch(e){URL.revokeObjectURL(u);return;}put('lbRaw',u,'none');}catch(e){}
+    try{const u=await IMG.bigRaw(r.raw,r.rawMode||0);if(!u)return;try{await preload(u);}catch(e){URL.revokeObjectURL(u);return;}put('lbRaw',u,'none');}catch(e){}
   })());
   await Promise.all(jobs);
   setTimeout(()=>old.forEach(u=>URL.revokeObjectURL(u)),1500);
@@ -1647,34 +1674,62 @@ if(window.__RAW_NATIVE__){
   window.addEventListener('scroll',()=>{lastZones='';reportZones();},true);
   setInterval(reportZones,1200);
 
-  /* ---- 拖进来时的全屏大识别框 ----
-     原生拖拽层盖住两个方框后会接管鼠标，网页收不到那一片的 dragenter/dragover。
-     但从窗口边缘拖进来时网页仍能收到事件，所以：
-       ① 一收到 dragenter/dragover 就显示大框并刷新时间戳；
-       ② 鼠标移进原生层时浏览器会发 dragleave —— 拦下来，别让主体把大框藏掉；
-       ③ 真正拖出窗口、松手落到原生层（/api/dropped）、落到网页别处时隐藏；
-       ④ 4 秒无事件兜底隐藏，防止残留。 */
+  /* ---- 常驻的黄色虚线大识别框 ----
+     接收区扩到整页后网页几乎收不到 dragenter，只靠「拖入才出现」的框不可靠。
+     所以第 1 步常驻一圈黄色虚线大框：打开软件就知道往哪拖、可以松手。
+     拖进来时切到「激活态」：边框变亮、中间显示「松开鼠标…」提示。
+     结果页自动撤掉，不干扰核对/导出。 */
   const overlay=$('dropOverlay');
+  const idleCss=document.createElement('style');
+  idleCss.textContent=
+    '#dropOverlay[data-idle]{background:rgba(240,166,75,.035);border-color:rgba(240,166,75,.55)}'
+    +'#dropOverlay[data-idle]>div{display:none}';
+  document.head.appendChild(idleCss);
   let lastDrag=0;
-  const showOverlay=()=>{if(state.view==='setup'){overlay.hidden=false;lastDrag=Date.now();}};
-  const hideOverlay=()=>{overlay.hidden=true;lastDrag=0;};
+  function syncIdle(){
+    if(state.view==='setup'){
+      overlay.hidden=false;
+      if(!overlay.dataset.dragging)overlay.dataset.idle='1';
+    }else{
+      overlay.hidden=true;
+      overlay.removeAttribute('data-idle');
+      overlay.removeAttribute('data-dragging');
+    }
+  }
+  const showOverlay=()=>{
+    if(state.view!=='setup')return;
+    overlay.hidden=false;
+    overlay.removeAttribute('data-idle');
+    overlay.dataset.dragging='1';
+    lastDrag=Date.now();
+  };
+  const hideOverlay=()=>{
+    lastDrag=0;
+    overlay.removeAttribute('data-dragging');
+    syncIdle();
+  };
   document.addEventListener('dragenter',e=>{if(hasFiles(e))showOverlay();},true);
   document.addEventListener('dragover',e=>{
     if(!hasFiles(e))return;
     lastDrag=Date.now();
-    if(overlay.hidden)showOverlay();
+    if(!overlay.dataset.dragging)showOverlay();
   },true);
   document.addEventListener('dragleave',e=>{
     if(!hasFiles(e))return;
+    /* 主体的 dragleave 会直接 hidden=true，把常驻框整个藏掉，一律拦下来；
+       状态只由这里的 dragging/idle 管理。 */
+    e.stopPropagation();
     const out=!e.relatedTarget&&(e.clientX<=0||e.clientY<=0||
       e.clientX>=window.innerWidth||e.clientY>=window.innerHeight);
-    if(out){hideOverlay();return;}
-    e.stopPropagation();   /* 进的是原生层，不是离开窗口：保住大框 */
+    if(out)hideOverlay();   /* 真正拖出窗口 → 回到常驻虚线框 */
   },true);
   document.addEventListener('drop',()=>{hideOverlay();},true);
   setInterval(()=>{
-    if(!overlay.hidden&&lastDrag&&Date.now()-lastDrag>4000)hideOverlay();
+    if(overlay.dataset.dragging&&lastDrag&&Date.now()-lastDrag>4000)hideOverlay();
   },400);
+  const origSetView=setView;
+  setView=function(v){origSetView(v);syncIdle();};
+  syncIdle();
 
   const candCounts=c=>{const t=[];if(c.raw)t.push(c.raw+' 个 RAW');if(c.jpg)t.push(c.jpg+' 张 JPG');return t.length?t.join(' · '):'没数到照片';};
   async function applyNativeDrops(items){
