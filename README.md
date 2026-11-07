@@ -33,7 +33,7 @@
 核对完整性用 SHA-256：
 
 ```
-Windows v1.2 exe  411823995ddfa18d5f195c824ebd29f87e7aca08ce660b054c5fb22813967330
+Windows v1.2 exe  55430b888e3c3a4b79bae8fdbe33da808d21fddcf0ebda0d02d64de70ad8e786
 Windows v1.1 exe  23804e7e1d12be7fd226a12d2efd4812d54e1afc35f779588a392bd5ff82d1fa
 Windows v1.0 exe  7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
 macOS  dmg        95dfed3fbec1972dc80002460c15b6aeeade698f3e4c46bea619b42f0a54e15c

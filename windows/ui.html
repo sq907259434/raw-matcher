@@ -1687,13 +1687,28 @@ if(window.__RAW_NATIVE__){
        ③ 真正拖出窗口、松手落到原生层（/api/dropped）、落到网页别处时隐藏；
        ④ 4 秒无事件兜底隐藏，防止残留。 */
   const overlay=$('dropOverlay');
+  /* 网页版实测的两条样式，逐值照抄并写死：
+       ① 整屏淡黄蒙版 rgba(240,166,75,.1)
+       ② 黄色虚线边框 3px dashed rgb(240,166,75)
+     两个都要，用 !important 固定，避免被主体后续样式/内核差异吃掉。 */
+  const dragCss=document.createElement('style');
+  dragCss.textContent=
+    '#dropOverlay[data-rawm-drag]{background:rgba(240,166,75,.1)!important;'
+    +'border:3px dashed #f0a64b!important}'
+    +'#dropOverlay[data-rawm-drag]>div{display:block!important}';
+  document.head.appendChild(dragCss);
   let lastDrag=0, byPoll=false;
   const showOverlay=()=>{
     if(state.view!=='setup')return;
     overlay.hidden=false;
+    overlay.dataset.rawmDrag='1';
     lastDrag=Date.now();
   };
-  const hideOverlay=()=>{overlay.hidden=true;lastDrag=0;byPoll=false;};
+  const hideOverlay=()=>{
+    overlay.hidden=true;
+    overlay.removeAttribute('data-rawm-drag');
+    lastDrag=0;byPoll=false;
+  };
   document.addEventListener('dragenter',e=>{if(hasFiles(e))showOverlay();},true);
   document.addEventListener('dragover',e=>{
     if(!hasFiles(e))return;
