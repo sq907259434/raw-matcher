@@ -24,6 +24,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import urllib.request
 import webbrowser
 from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -75,6 +76,17 @@ _user32.GetClassNameW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
 _user32.GetClassNameW.restype = ctypes.c_int
 _user32.IsChild.argtypes = (wintypes.HWND, wintypes.HWND)
 _user32.IsChild.restype = wintypes.BOOL
+# 单实例：第二次启动要把已有窗口切到前台
+_k32.CreateMutexW.argtypes = (ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+_k32.CreateMutexW.restype = wintypes.HANDLE
+_user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
+_user32.FindWindowW.restype = wintypes.HWND
+_user32.IsIconic.argtypes = (wintypes.HWND,)
+_user32.IsIconic.restype = wintypes.BOOL
+_user32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+_user32.ShowWindow.restype = wintypes.BOOL
+_user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+_user32.SetForegroundWindow.restype = wintypes.BOOL
 _user32.GetWindowRect.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.RECT))
 _user32.GetWindowRect.restype = wintypes.BOOL
 _user32.GetWindowLongPtrW.argtypes = (wintypes.HWND, ctypes.c_int)
@@ -778,13 +790,39 @@ HTML_BYTES = b""
 COPY = {"task": None}
 SERVER_LOG = []
 
+# 落盘：真机出问题时无法连上进程，只能事后读文件。
+# 路径固定，每行带时间戳；启动时轮转成 .prev，保证单次会话的日志完整可读。
+SRV_LOG_FILE = os.path.join(tempfile.gettempdir(), "rawmatcher_srv.log")
+
+
+def _log_rotate():
+    try:
+        if os.path.exists(SRV_LOG_FILE):
+            prev = SRV_LOG_FILE + ".prev"
+            try:
+                if os.path.exists(prev):
+                    os.remove(prev)
+            except OSError:
+                pass
+            os.replace(SRV_LOG_FILE, prev)
+        with open(SRV_LOG_FILE, "w", encoding="utf-8") as f:
+            f.write("%s == 启动 pid=%d ==\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), os.getpid()))
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def srv_note(text):
+    line = time.strftime("%H:%M:%S") + " " + str(text)
     try:
         server_log = SERVER_LOG
-        server_log.append(time.strftime("%H:%M:%S") + " " + str(text))
+        server_log.append(line)
         if len(server_log) > 30:
             del server_log[:-30]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        with open(SRV_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line[:500] + "\n")
     except Exception:  # noqa: BLE001
         pass
 
@@ -863,6 +901,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, data)
         if path == "/api/draghover":
             return self._json(drag_hover())
+        if path == "/api/focus":
+            # 第二次启动时由新进程调用：把已有窗口切到前台，然后新进程自己退出
+            srv_note("页面：收到聚焦请求")
+            return self._json({"ok": focus_own_window()})
         if path == "/api/dropinfo":
             try:
                 info = droptarget.debug_info()
@@ -886,6 +928,11 @@ class Handler(BaseHTTPRequestHandler):
         LAST_BEAT[0] = time.time()
 
         if path == "/api/heartbeat":
+            return self._json({"ok": True})
+
+        if path == "/api/note":
+            # 页面侧把关键节点写进同一份日志，排障时不用开控制台
+            srv_note("页面：" + str(body.get("text") or "")[:400])
             return self._json({"ok": True})
 
         if path == "/api/pick":
@@ -1045,6 +1092,11 @@ class Handler(BaseHTTPRequestHandler):
             threading.Timer(0.3, lambda: os._exit(0)).start()
             return self._json({"ok": True})
 
+        if path == "/api/focus":
+            # 第二次启动时由新进程调用：把已有窗口切到前台，然后新进程自己退出
+            srv_note("页面：收到聚焦请求")
+            return self._json({"ok": focus_own_window()})
+
         return self._json({"error": "unknown api"}, 404)
 
 
@@ -1057,6 +1109,95 @@ def port_in_use(port):
             return True
     except OSError:
         return False
+
+
+# ---- 单实例：同一时间只允许一套「服务 + 窗口 + 拖拽层」----
+# 同时开两个实例时，各自有独立端口和拖拽层：把文件夹拖到旧窗口那一层，
+# 路径进了旧实例的队列，而你看的那个页面在等另一个实例的队列 —— 拖进去
+# 毫无反应（2026-11-07 用户实测）。所以第二次启动不再起第二套窗口，
+# 而是把已经在跑的那个窗口切到前台，自己退出。
+PORT_FILE = os.path.join(tempfile.gettempdir(), "rawmatcher_port.txt")
+MUTEX_NAME = "Local\\RawMatcher-single-9C41"
+_MUTEX = {"handle": None}
+
+
+def single_instance_claim():
+    """True=本进程是唯一实例；False=已有实例在跑。拿不到锁时按唯一实例处理。"""
+    try:
+        h = _k32.CreateMutexW(None, False, MUTEX_NAME)
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+            return False
+        _MUTEX["handle"] = h   # 句柄必须留到进程结束，否则锁会被释放
+        return True
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def focus_running_instance():
+    """把已在跑的窗口切到前台。端口从 %TEMP% 里读，读不到再试默认端口。"""
+    ports = []
+    try:
+        with open(PORT_FILE, "r", encoding="utf-8") as f:
+            p = int((f.read() or "").strip())
+        if 0 < p < 65536 and p != DEFAULT_PORT:
+            ports.append(p)
+    except Exception:  # noqa: BLE001
+        pass
+    ports.append(DEFAULT_PORT)
+    for p in ports:
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:%d/api/focus" % p, timeout=2.5) as r:
+                if json.loads(r.read().decode("utf-8")).get("ok"):
+                    return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
+def write_port_file(port):
+    try:
+        with open(PORT_FILE, "w", encoding="utf-8") as f:
+            f.write(str(int(port)))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def clear_port_file():
+    try:
+        with open(PORT_FILE, "r", encoding="utf-8") as f:
+            mine = int((f.read() or "").strip())
+    except Exception:  # noqa: BLE001
+        return
+    try:
+        if mine == _PORT[0]:
+            os.remove(PORT_FILE)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def focus_own_window():
+    """把本实例的窗口切到前台（/api/focus 用）。"""
+    hwnd = None
+    _, parent = _own_windows()
+    if parent:
+        hwnd = parent
+    if not hwnd:
+        try:
+            hwnd = _user32.FindWindowW(None, APP_TITLE)
+        except Exception:  # noqa: BLE001
+            hwnd = None
+    if not hwnd:
+        return False
+    try:
+        if _user32.IsIconic(hwnd):
+            _user32.ShowWindow(hwnd, 9)     # SW_RESTORE
+        _user32.SetForegroundWindow(hwnd)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+_PORT = [0]
 
 
 def find_browser():
@@ -1173,12 +1314,24 @@ def main():
             pass
     HTML_BYTES = load_html()
 
+    if not os.environ.get("RAWM_PORT") and not os.environ.get("RAWM_MULTI"):
+        # 单实例：已经有窗口在跑就把那个切到前台，本进程直接退出。
+        # 起了第二套「服务+窗口+拖拽层」时，拖到旧窗口上的路径会进旧实例的
+        # 队列，而新页面在等新队列 —— 表现就是「拖进去毫无反应」（2026-11-07）。
+        # 注意必须放在 _log_rotate() 之前：否则第二个进程会把在跑那个实例的日志轮转掉。
+        if not single_instance_claim():
+            ok = focus_running_instance()
+            srv_note("检测到已有实例在跑，聚焦%s，本进程退出（未启动第二套窗口）"
+                     % ("成功" if ok else "失败"))
+            return
+
+    _log_rotate()
+    srv_note("启动：日志文件 %s" % SRV_LOG_FILE)
+
     port = int(os.environ.get("RAWM_PORT") or DEFAULT_PORT)
     if port_in_use(port) and not os.environ.get("RAWM_PORT"):
-        # 已有实例占着 47311：绝不能只 open_window 就 return。
-        # 那样新窗口连的是旧服务（旧页面），而且 droptarget.start() 在下面被跳过，
-        # 窗口没有原生拖拽层 —— 拖进去一个文件夹都认不到（2026-11-05 实测根因）。
-        # 改为让系统分配一个空闲端口，起一套完整独立的 服务 + 窗口 + 拖拽层。
+        # 极端情况：锁没拿到却端口被占（上次异常退出残留）。让系统分配空闲端口，
+        # 起一套完整独立的 服务 + 窗口 + 拖拽层，绝不只开窗口不建拖拽层。
         port = 0
 
     try:
@@ -1186,6 +1339,8 @@ def main():
     except OSError:
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = httpd.server_address[1]
+    _PORT[0] = port
+    write_port_file(port)
     httpd.daemon_threads = True
 
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -1211,6 +1366,7 @@ def main():
         except Exception:  # noqa: BLE001
             pass
         cleanup_profiles(keep=None)
+        clear_port_file()
         os._exit(0)
 
     def watchdog():

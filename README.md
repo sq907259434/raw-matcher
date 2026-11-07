@@ -10,7 +10,7 @@
 
 | 平台 / 形态 | 直链（恒定指向最新版） | 国内加速镜像 |
 |---|---|---|
-| **Windows 10/11 64 位** · **v1.2** · 8.3 MB · 推荐 | **[⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.2-win64.exe)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.2-win64.exe) |
+| **Windows 10/11 64 位** · **v1.2** · 8.4 MB · 推荐 | **[⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.2-win64.exe)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.2-win64.exe) |
 | Windows 10/11 64 位 · v1.1 · 8.2 MB · 上一版 | [⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.1-win64.exe) | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.1-win64.exe) |
 | Windows 10/11 64 位 · v1.0 · 8.2 MB · 旧版 | [⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.0-win64.exe) | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.0-win64.exe) |
 | **macOS 通用版** · v1.3 · 0.7 MB | **[⬇ dmg](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-1.3-macos-universal.dmg)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-1.3-macos-universal.dmg) |
@@ -20,7 +20,7 @@
 
 **Windows v1.2 更新**：桌面版换成与网页版 v2 相同的三步向导界面（拖拽方框、拖入时的全屏大识别框、整页可放的接收区、并排缩略图、灯箱放大、冲突行置顶），同时保留真实路径、原生拖拽与系统级复制。v1.1 / v1.0 仍可下载，旧直链内容不变。
 
-**画面方向与大识别框（网页版与桌面版同步）**：JPG 缩览图保持客户看到的方向不动，RAW 内嵌预览从 8 个方向里挑最贴近 JPG 的一张旋转对齐，点开放大也按同一方向，不再一横一竖。桌面版拖入文件夹时整屏出现淡黄遮罩 + 黄色虚线大识别框 + 「松开鼠标…」提示（与网页版一致），松手或拖出后收起；不拖入时界面保持原样。拖入判定只在光标真的落在软件窗口上时才成立——按住文件夹没拖到窗口、或者在资源管理器里拖动、在软件里按住鼠标拖选，都不会闪。**画面差异阈值默认 40 → 70**：实测同一张照片（JPG 对 RAW 内嵌预览）的画面距离在 40～55，不同照片在 94 以上；原来定 40，颜色、亮度不一样的同源照片会被误标「画面不符」。现在默认 70，离「不同照片」仍留 20 多位余量，可在「匹配设置」里自己调。
+**画面方向与大识别框（网页版与桌面版同步）**：JPG 缩览图保持客户看到的方向不动，RAW 内嵌预览从 8 个方向里挑最贴近 JPG 的一张旋转对齐，点开放大也按同一方向，不再一横一竖。桌面版拖入文件夹时整屏出现淡黄遮罩 + 黄色虚线大识别框 + 「松开鼠标…」提示（与网页版一致），松手或拖出后收起；不拖入时界面保持原样。拖入判定只在光标真的落在软件窗口上时才成立——按住文件夹没拖到窗口、或者在资源管理器里拖动、在软件里按住鼠标拖选，都不会闪。**画面差异阈值默认 40 → 70**：实测同一张照片（JPG 对 RAW 内嵌预览）的画面距离在 40～55，不同照片在 94 以上；原来定 40，颜色、亮度不一样的同源照片会被误标「画面不符」。现在默认 70，离「不同照片」仍留 20 多位余量，可在「匹配设置」里自己调。**同一时间只允许一个实例**：重复双击不会被无视——第二次启动会把已经在跑的窗口切到前台，自己退出，不会出现两个窗口各有各的拖拽层（那样拖到旧窗口上会毫无反应）。另外内置了排障记录 `%TEMP%\rawmatcher_srv.log`，拖放链路的每一步都写在里面，出问题时报这个文件就能定位。
 
 **网页版不用安装**：把 HTML 存到本机，用 Chrome / Edge 双击打开就能用，Mac / Linux / Windows 都行。功能一致（含同文件夹模式、按文件名/拍摄时间/画面匹配、导出），只是浏览器出于安全不给文件夹的完整路径、复制走文件接口会慢一点。详见[与纯网页版的区别](#与纯网页版的区别)。
 
@@ -33,7 +33,7 @@
 核对完整性用 SHA-256：
 
 ```
-Windows v1.2 exe  dc329d02e7c247d0cc4b4025f24e7077f7681bcdd03091d206adf0990d72b499
+Windows v1.2 exe  f06fde136539b3b3ac060eb4526a3c78825166fe3755b262f6e2ee59a8525a0e
 Windows v1.1 exe  23804e7e1d12be7fd226a12d2efd4812d54e1afc35f779588a392bd5ff82d1fa
 Windows v1.0 exe  7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
 macOS  dmg        95dfed3fbec1972dc80002460c15b6aeeade698f3e4c46bea619b42f0a54e15c

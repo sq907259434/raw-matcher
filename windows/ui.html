@@ -1759,14 +1759,19 @@ if(window.__RAW_NATIVE__){
   },120);
 
   const candCounts=c=>{const t=[];if(c.raw)t.push(c.raw+' 个 RAW');if(c.jpg)t.push(c.jpg+' 张 JPG');return t.length?t.join(' · '):'没数到照片';};
+  /* 排障用：把关键节点写进本地服务的日志文件（%TEMP%\rawmatcher_srv.log），
+     真机出问题时不用开控制台，事后读文件就能定位断在哪一段。 */
+  const plog=t=>{try{apiJ('note',{text:String(t).slice(0,300)}).catch(()=>{});}catch(_){}};
   async function applyNativeDrops(items){
+    try{
     hideOverlay();   /* 松手落在原生层：收起大框 */
+    plog('拖放收到 '+items.length+' 项：'+items.map(i=>i.path||'?').join(' | '));
     const got=[];
     for(const it of items){
       const p=it.path;if(!p)continue;
       let info;
       try{info=await apiJ('classify',{path:p});}catch(e){info={ok:false,error:(e&&e.message)||''};}
-      if(!info.ok){note('「'+p+'」打不开：'+(info.error||''),true);continue;}
+      if(!info.ok){plog('分类失败 '+p+' ：'+(info.error||''));note('「'+p+'」打不开：'+(info.error||''),true);continue;}
       got.push({path:p,slot:it.slot,name:info.name,raw:info.raw,jpg:info.jpg});
     }
     if(!got.length)return;
@@ -1795,11 +1800,22 @@ if(window.__RAW_NATIVE__){
       done[k]=true;setNative(k,g.path);
     }
     note(got.map(g=>'「'+g.name+'」→ '+g.path+'（'+candCounts(g)+'）').join('；'));
+    }catch(e){
+      plog('applyNativeDrops 异常：'+((e&&e.stack)||(e&&e.message)||e));
+      note('处理拖入的文件夹时出错：'+((e&&e.message)||e),true);
+    }finally{
+      plog('拖放结果 raw='+((state.raw&&state.raw.label)||'空')
+           +' ｜ jpg='+((state.jpg&&state.jpg.label)||'空'));
+    }
   }
+  let dPoll=0,dErr=0;
   setInterval(async()=>{
-    let r;try{r=await apiJ('dropped',{});}catch(_){return;}
+    dPoll++;
+    if(dPoll%40===0)plog('dropped 轮询心跳 #'+dPoll+' 失败 '+dErr+' 次');
+    let r;try{r=await apiJ('dropped',{});}catch(e){dErr++;return;}
     if((r.items||[]).length)await applyNativeDrops(r.items);
   },300);
+  setTimeout(()=>plog('页面已就绪，开始轮询 /api/dropped'),1500);
 
   /* 落到原生接收区以外的拖放，浏览器拿不到真实路径，宁可让重拖也不猜 */
   /* 落到原生接收区以外（顶栏、挖空的控件）时，先试着从 dataTransfer 里
