@@ -698,17 +698,21 @@ const IMG = (function () {
     const f = await getFile(item);
     // 网页版拿到的是真 File/Blob，交给浏览器自己解码，不必把整个文件读进内存；
     // 桌面版是 /api/head 包装出来的伪 File，只能分块读成 Blob。
-    let bmp;
-    if (typeof Blob !== 'undefined' && f instanceof Blob) {
-      bmp = await decode(f);
-    } else {
-      const u8 = await readAll(f, CFG.readCap);
-      bmp = await decode(new Blob([u8], { type: 'image/jpeg' }));
-    }
+    const blob = (typeof Blob !== 'undefined' && f instanceof Blob)
+      ? f : new Blob([await readAll(f, CFG.readCap)], { type: 'image/jpeg' });
+    // 指纹一律用「不套 EXIF」的原像素，8 个方向由 xform 自己转，匹配口径保持不变。
+    const bmp = await decode(blob);
     const hashes = [], pics = [];
     for (let m = 0; m < CFG.NMODE; m++) { hashes.push(drawHash(bmp, m)); pics.push(drawThumb(bmp, m)); }
     if (bmp.close) bmp.close();
-    return { hashes: hashes, pics: pics };
+    // 显示基准：按 JPG 自己的 EXIF 方向转正。客户挑的就是这张，方向以它为主。
+    let picBase = pics[0];
+    try {
+      const ob = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      picBase = drawThumb(ob, 0);
+      if (ob.close) ob.close();
+    } catch (e) { /* 不支持 from-image 的老内核退回原像素 */ }
+    return { hashes: hashes, pics: pics, picBase: picBase };
   }
 
   async function enhance(results, raws) {
@@ -770,7 +774,9 @@ const IMG = (function () {
       }
       it.imgDist = best ? best.d : null;
       it.imgMode = best ? best.m : 0;
-      it.jpgPic = it._j ? it._j.pics[it.imgMode || 0] : null;
+      // 显示以 JPG 为主：JPG 永远用它自己 EXIF 转正后的方向，不再因匹配结果被旋转或镜像；
+      // RAW 内嵌预览保持相机写好的原方向。8 方向只用于算距离，不参与显示。
+      it.jpgPic = it._j ? (it._j.picBase || it._j.pics[0]) : null;
       it.rawPic = it.raw._img ? it.raw._img.pic : null;
       if (best && best.d > T) {
         it.level = 'warn';
@@ -779,7 +785,7 @@ const IMG = (function () {
         it.note += (it.note ? '；' : '') + '按画面找回（距离 ' + (best ? best.d : '?') + '）';
       }
       if (it.method !== 'image' && best && best.m) {
-        it.note += (it.note ? '；' : '') + '画面已自动对齐（' + MODE_NAME[best.m] + '）';
+        it.note += (it.note ? '；' : '') + 'RAW 预览与 JPG 有方向差（' + MODE_NAME[best.m] + '），两边均按 JPG 方向显示';
       }
     }
     for (const it of results) if (!it.jpgPic && it._j) it.jpgPic = it._j.pics[0];
@@ -1235,13 +1241,13 @@ async function loadBig(r){
   const tok=++LB.tok;
   const old=LB.urls;LB.urls=[];
   const put=(id,url,orient)=>{if(tok!==LB.tok){URL.revokeObjectURL(url);return;}LB.urls.push(url);setImg(id,url,orient);};
-  // 两边都用「不套用 EXIF 方向」的原像素，和画面对齐算法一致；对不上方向的情况保留已对齐的缩略图
-  const aligned=!r.raw||!r.imgMode;
+  // 显示以 JPG 为主：JPG 按自己的 EXIF 方向转正，RAW 内嵌预览保持相机写好的原方向。
+  // 8 方向只用于算画面距离，不参与显示，所以这里不再按 imgMode 挑图。
   const jobs=[];
-  if(aligned)jobs.push((async()=>{
-    try{const u=URL.createObjectURL(await getFile(r.jpg));await preload(u);put('lbJpg',u,r.raw?'none':'from-image');}catch(e){}
+  jobs.push((async()=>{
+    try{const u=URL.createObjectURL(await getFile(r.jpg));await preload(u);put('lbJpg',u,'from-image');}catch(e){}
   })());
-  if(r.raw&&aligned)jobs.push((async()=>{
+  if(r.raw)jobs.push((async()=>{
     try{const u=await IMG.bigRaw(r.raw);if(!u)return;try{await preload(u);}catch(e){URL.revokeObjectURL(u);return;}put('lbRaw',u,'none');}catch(e){}
   })());
   await Promise.all(jobs);
