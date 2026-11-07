@@ -10,12 +10,15 @@
 
 | 平台 / 形态 | 直链（恒定指向最新版） | 国内加速镜像 |
 |---|---|---|
-| **Windows 10/11 64 位** · **v1.1** · 8.2 MB · 推荐 | **[⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.1-win64.exe)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.1-win64.exe) |
+| **Windows 10/11 64 位** · **v1.2** · 8.3 MB · 推荐 | **[⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.2-win64.exe)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.2-win64.exe) |
+| Windows 10/11 64 位 · v1.1 · 8.2 MB · 上一版 | [⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.1-win64.exe) | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.1-win64.exe) |
 | Windows 10/11 64 位 · v1.0 · 8.2 MB · 旧版 | [⬇ exe](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-v1.0-win64.exe) | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-v1.0-win64.exe) |
 | **macOS 通用版** · v1.3 · 0.7 MB | **[⬇ dmg](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-1.3-macos-universal.dmg)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-1.3-macos-universal.dmg) |
 | **纯网页版** · 任意系统 · 84 KB | **[⬇ html](https://github.com/sq907259434/raw-matcher/releases/latest/download/RAWMatcher-web.html)** | [镜像](https://ghfast.top/https://github.com/sq907259434/raw-matcher/releases/download/v1.0/RAWMatcher-web.html) |
 
-[发布页](https://github.com/sq907259434/raw-matcher/releases/latest)里有完整的更新说明和校验值。国内直连 GitHub 下载容易卡住，用镜像列（同一个文件，已核对 SHA-256）。v1.1 与 v1.0 放在同一个 Release，旧直链不会失效。
+[发布页](https://github.com/sq907259434/raw-matcher/releases/latest)里有完整的更新说明和校验值。国内直连 GitHub 下载容易卡住，用镜像列（同一个文件，已核对 SHA-256）。Windows 三个版本、macOS 与网页版都放在同一个 Release，旧直链不会失效。
+
+**Windows v1.2 更新**：桌面版换成与网页版 v2 相同的三步向导界面（拖拽方框、并排缩略图、灯箱放大、冲突行置顶），同时保留真实路径、原生拖拽与系统级复制。v1.1 / v1.0 仍可下载，旧直链内容不变。
 
 **网页版不用安装**：把 HTML 存到本机，用 Chrome / Edge 双击打开就能用，Mac / Linux / Windows 都行。功能一致（含同文件夹模式、按文件名/拍摄时间/画面匹配、导出），只是浏览器出于安全不给文件夹的完整路径、复制走文件接口会慢一点。详见[与纯网页版的区别](#与纯网页版的区别)。
 
@@ -28,6 +31,7 @@
 核对完整性用 SHA-256：
 
 ```
+Windows v1.2 exe  b0e151bd40840bce1c4b821385e4b834f6303acbb9bf4ef4d46875e23660d06d
 Windows v1.1 exe  23804e7e1d12be7fd226a12d2efd4812d54e1afc35f779588a392bd5ff82d1fa
 Windows v1.0 exe  7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
 macOS  dmg        95dfed3fbec1972dc80002460c15b6aeeade698f3e4c46bea619b42f0a54e15c
@@ -117,7 +121,7 @@ Edge --app 窗口 (ui.html)  ←→  本地 HTTP 服务 (127.0.0.1:47311，被�
                           原生拖拽层 (透明置顶层)
 ```
 
-- **界面**：用 Edge/Chrome 的 `--app` 模式承载 `ui.html`。网页版是另一份独立的 `web/JPG选RAW.html`，两者不同源，不要互相覆盖。
+- **界面**：用 Edge/Chrome 的 `--app` 模式承载 `ui.html`。`ui.html` 以网页版 `web/JPG选RAW.html` 为界面主体（逐字一致），末尾追加一段桌面原生适配层，把选文件夹、扫描、拖放、复制接到本机服务；不要用网页版直接覆盖 `ui.html`，那会丢掉真实路径与快速复制。
 - **本地服务**：`app.py` 起一个只监听 127.0.0.1 的 HTTP 服务，负责扫描目录、匹配、复制。已经开着一个实例时，新实例会起一套完整独立的端口 + 窗口 + 拖拽层，不会出现「窗口开着却拖不进文件夹」的半残状态。
 - **原生拖拽层**：`droptarget.py` 在窗口上盖一层**顶层分层透明窗口**（`WS_POPUP` + `WS_EX_LAYERED`），只在上方接收区不透明、其余像素 alpha=0 让鼠标穿透；用 `DragAcceptFiles` + `WM_DROPFILES` 拿系统给的真实路径。接收区里凡是需要用鼠标点的控件（复选框、选择按钮）都从这层里「挖空」，点击直接穿透到网页。
 
@@ -131,7 +135,7 @@ Edge --app 窗口 (ui.html)  ←→  本地 HTTP 服务 (127.0.0.1:47311，被�
 ## 已知限制
 
 - **本仓库的源码只覆盖 Windows 桌面端**（用到了 Win32 拖放与分层窗口）和纯网页版；macOS 通用版以成品 DMG 形式在 Release 提供，源码不在仓库内。
-- 拖放要落在界面上半部分的接收区；落在按钮那一带会提示往上拖一点。
+- 拖放要落在第 1 步的两个方框里；落到别处浏览器拿不到真实路径，会提示重新拖。
 - RAW 只按扩展名识别（CR3 / CR2 / NEF / ARW / RAF / ORF / RW2 / DNG / PEF / SRW 等 20 多种），不做解码，因此不需要装相机厂商的编解码器。
 - 画面指纹比的是**构图与明暗结构**，不是像素值或颜色。**大幅裁切、任意角度倾斜、透视校正、重度后期**都可能认不出，这时靠并排缩略图人工确认或用「改配」手动指定。默认阈值 40 可在折叠设置区调整，换机型 / 换批次建议先拿少量素材试一次。
 - 网页版的一键复制需要 Chrome / Edge；其他浏览器会给出「复制脚本」作为兜底。
@@ -142,7 +146,7 @@ Edge --app 窗口 (ui.html)  ←→  本地 HTTP 服务 (127.0.0.1:47311，被�
 windows/            Windows 桌面版（macOS 版只在 Release 提供成品 DMG）
   app.py            本地服务 + 窗口启动 + 扫描/匹配/复制
   droptarget.py     Win32 原生拖拽层（分层透明窗口）
-  ui.html           桌面版界面（与网页版不同源）
+  ui.html           网页版 v2 界面 + 桌面原生适配层
   app.ico / make_icon.py / build.bat
 web/
   JPG选RAW.html     纯网页版主文件，双击即用（当前为 v2）
