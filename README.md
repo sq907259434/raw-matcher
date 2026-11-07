@@ -18,7 +18,7 @@
 
 [发布页](https://github.com/sq907259434/raw-matcher/releases/latest)里有完整的更新说明和校验值。国内直连 GitHub 下载容易卡住，用镜像列（同一个文件，已核对 SHA-256）。Windows 三个版本、macOS 与网页版都放在同一个 Release，旧直链不会失效。
 
-**Windows v1.2 更新**：桌面版换成与网页版 v2 相同的三步向导界面（拖拽方框、并排缩略图、灯箱放大、冲突行置顶），同时保留真实路径、原生拖拽与系统级复制。v1.1 / v1.0 仍可下载，旧直链内容不变。
+**Windows v1.2 更新**：桌面版换成与网页版 v2 相同的三步向导界面（拖拽方框、拖入时的全屏大识别框、并排缩略图、灯箱放大、冲突行置顶），同时保留真实路径、原生拖拽与系统级复制。v1.1 / v1.0 仍可下载，旧直链内容不变。
 
 **网页版不用安装**：把 HTML 存到本机，用 Chrome / Edge 双击打开就能用，Mac / Linux / Windows 都行。功能一致（含同文件夹模式、按文件名/拍摄时间/画面匹配、导出），只是浏览器出于安全不给文件夹的完整路径、复制走文件接口会慢一点。详见[与纯网页版的区别](#与纯网页版的区别)。
 
@@ -31,7 +31,7 @@
 核对完整性用 SHA-256：
 
 ```
-Windows v1.2 exe  b0e151bd40840bce1c4b821385e4b834f6303acbb9bf4ef4d46875e23660d06d
+Windows v1.2 exe  a11229ea21684a8a4d6febc1f5a56bd333521e24a7db9278a339aea0a6eddddc
 Windows v1.1 exe  23804e7e1d12be7fd226a12d2efd4812d54e1afc35f779588a392bd5ff82d1fa
 Windows v1.0 exe  7da6c7c95b0c02c03ec01644c431a68db7b740b6f6d774ecfd31cc3d50e491e5
 macOS  dmg        95dfed3fbec1972dc80002460c15b6aeeade698f3e4c46bea619b42f0a54e15c

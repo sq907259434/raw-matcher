@@ -1626,8 +1626,38 @@ if(window.__RAW_NATIVE__){
   window.addEventListener('scroll',()=>{lastZones='';reportZones();},true);
   setInterval(reportZones,1200);
 
+  /* ---- 拖进来时的全屏大识别框 ----
+     原生拖拽层盖住两个方框后会接管鼠标，网页收不到那一片的 dragenter/dragover。
+     但从窗口边缘拖进来时网页仍能收到事件，所以：
+       ① 一收到 dragenter/dragover 就显示大框并刷新时间戳；
+       ② 鼠标移进原生层时浏览器会发 dragleave —— 拦下来，别让主体把大框藏掉；
+       ③ 真正拖出窗口、松手落到原生层（/api/dropped）、落到网页别处时隐藏；
+       ④ 4 秒无事件兜底隐藏，防止残留。 */
+  const overlay=$('dropOverlay');
+  let lastDrag=0;
+  const showOverlay=()=>{if(state.view==='setup'){overlay.hidden=false;lastDrag=Date.now();}};
+  const hideOverlay=()=>{overlay.hidden=true;lastDrag=0;};
+  document.addEventListener('dragenter',e=>{if(hasFiles(e))showOverlay();},true);
+  document.addEventListener('dragover',e=>{
+    if(!hasFiles(e))return;
+    lastDrag=Date.now();
+    if(overlay.hidden)showOverlay();
+  },true);
+  document.addEventListener('dragleave',e=>{
+    if(!hasFiles(e))return;
+    const out=!e.relatedTarget&&(e.clientX<=0||e.clientY<=0||
+      e.clientX>=window.innerWidth||e.clientY>=window.innerHeight);
+    if(out){hideOverlay();return;}
+    e.stopPropagation();   /* 进的是原生层，不是离开窗口：保住大框 */
+  },true);
+  document.addEventListener('drop',()=>{hideOverlay();},true);
+  setInterval(()=>{
+    if(!overlay.hidden&&lastDrag&&Date.now()-lastDrag>4000)hideOverlay();
+  },400);
+
   const candCounts=c=>{const t=[];if(c.raw)t.push(c.raw+' 个 RAW');if(c.jpg)t.push(c.jpg+' 张 JPG');return t.length?t.join(' · '):'没数到照片';};
   async function applyNativeDrops(items){
+    hideOverlay();   /* 松手落在原生层：收起大框 */
     const got=[];
     for(const it of items){
       const p=it.path;if(!p)continue;
@@ -1675,9 +1705,6 @@ if(window.__RAW_NATIVE__){
     ['zone-raw','zone-jpg'].forEach(i=>dragHL(i,false));
     note('请把文件夹拖到上面两个方框里（两个一起拖也行）——那里才能拿到硬盘上的真实位置。',true);
   };
-  /* 桌面版不需要网页那层全屏拖拽提示遮罩（晚于主体注册，覆盖它的显示） */
-  document.addEventListener('dragenter',()=>{$('dropOverlay').hidden=true;});
-
   /* ---- 保存清单：走系统「另存为」 ---- */
   download=function(name,text){
     apiJ('save',{name,text}).then(r=>{
