@@ -53,6 +53,39 @@ _CloseHandle = _k32.CloseHandle
 _CloseHandle.argtypes = (wintypes.HANDLE,)
 _CloseHandle.restype = wintypes.BOOL
 
+# 拖拽由原生拖拽层接管，浏览器窗口收不到 dragenter。
+# 但「从资源管理器拖文件进来」时左键必然按住且光标在移动，用这个判断拖入状态。
+_GetAsyncKeyState = _user32.GetAsyncKeyState
+_GetAsyncKeyState.argtypes = (wintypes.INT,)
+_GetAsyncKeyState.restype = wintypes.SHORT
+_GetCursorPos = _user32.GetCursorPos
+_GetCursorPos.argtypes = (ctypes.POINTER(wintypes.POINT),)
+_GetCursorPos.restype = wintypes.BOOL
+
+_DRAG = {"t0": 0.0, "x": 0, "y": 0, "moved": False}
+
+
+def drag_hover():
+    """返回是否正在把外部文件拖进窗口；附带诊断字段便于排障。"""
+    down = bool(_GetAsyncKeyState(0x01) & 0x8000)   # VK_LBUTTON
+    now = time.time()
+    if not down:
+        _DRAG["t0"] = 0.0
+        _DRAG["moved"] = False
+        return {"hover": False, "down": False, "moved": False, "elapsed": 0.0}
+    pt = wintypes.POINT()
+    if not _GetCursorPos(ctypes.byref(pt)):
+        return {"hover": False, "down": True, "moved": False, "elapsed": 0.0}
+    if not _DRAG["t0"]:
+        _DRAG["t0"] = now
+        _DRAG["x"], _DRAG["y"] = pt.x, pt.y
+        _DRAG["moved"] = False
+    if abs(pt.x - _DRAG["x"]) + abs(pt.y - _DRAG["y"]) > 8:
+        _DRAG["moved"] = True
+    elapsed = now - _DRAG["t0"]
+    return {"hover": bool(_DRAG["moved"] and elapsed > 0.18),
+            "down": True, "moved": _DRAG["moved"], "elapsed": round(elapsed, 3)}
+
 
 class _BROWSEINFOW(ctypes.Structure):
     _fields_ = [
@@ -673,6 +706,8 @@ class Handler(BaseHTTPRequestHandler):
             except OSError as ex:
                 return self._send(404, str(ex), "text/plain; charset=utf-8")
             return self._send(200, data)
+        if path == "/api/draghover":
+            return self._json(drag_hover())
         if path == "/api/dropinfo":
             try:
                 info = droptarget.debug_info()

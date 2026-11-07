@@ -1687,13 +1687,13 @@ if(window.__RAW_NATIVE__){
        ③ 真正拖出窗口、松手落到原生层（/api/dropped）、落到网页别处时隐藏；
        ④ 4 秒无事件兜底隐藏，防止残留。 */
   const overlay=$('dropOverlay');
-  let lastDrag=0;
+  let lastDrag=0, byPoll=false;
   const showOverlay=()=>{
     if(state.view!=='setup')return;
     overlay.hidden=false;
     lastDrag=Date.now();
   };
-  const hideOverlay=()=>{overlay.hidden=true;lastDrag=0;};
+  const hideOverlay=()=>{overlay.hidden=true;lastDrag=0;byPoll=false;};
   document.addEventListener('dragenter',e=>{if(hasFiles(e))showOverlay();},true);
   document.addEventListener('dragover',e=>{
     if(!hasFiles(e))return;
@@ -1714,6 +1714,32 @@ if(window.__RAW_NATIVE__){
   },400);
   const origSetView=setView;
   setView=function(v){origSetView(v);if(v!=='setup')hideOverlay();};
+
+  /* ---- 拖入状态由本机服务判定，不依赖浏览器的 dragenter ----
+     原生拖拽层是独立顶层窗口、拖放由它接管，网页收不到 dragenter，
+     所以前几版「靠拖拽事件显示大框」在真机上都不生效。
+     服务侧检测「左键按住 + 光标移动 + 持续一小段时间」= 正从外部拖文件进来；
+     网页内自己按下的鼠标用 localDown 抑制，避免点按钮时闪一下。 */
+  let localDown=false, localDownT=0;
+  document.addEventListener('mousedown',()=>{localDown=true;localDownT=Date.now();},true);
+  window.addEventListener('mouseup',()=>{localDown=false;hideOverlay();},true);
+  window.addEventListener('blur',()=>{localDown=false;hideOverlay();});
+  setInterval(async()=>{
+    if(localDown){
+      if(Date.now()-localDownT<1500)return;
+      localDown=false;   /* 网页内按下却没收到 mouseup 的兜底 */
+    }
+    if(state.view!=='setup'||document.hidden)return;
+    let r;
+    try{r=await fetch('/api/draghover').then(x=>x.json());}catch(_){return;}
+    if(typeof r.hover!=='boolean')return;
+    if(r.hover){
+      if(!byPoll){showOverlay();byPoll=true;}
+      else lastDrag=Date.now();   /* 防止 4 秒兜底误收起 */
+    }else if(byPoll){
+      hideOverlay();
+    }
+  },120);
 
   const candCounts=c=>{const t=[];if(c.raw)t.push(c.raw+' 个 RAW');if(c.jpg)t.push(c.jpg+' 张 JPG');return t.length?t.join(' · '):'没数到照片';};
   async function applyNativeDrops(items){
