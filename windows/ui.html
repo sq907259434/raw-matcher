@@ -365,7 +365,7 @@ body[data-view=setup] .toasts{bottom:28px}
       <div class="fld"><label>拍摄时间容差（秒）</label><input type="number" id="tol" value="5" min="0" step="1"><div class="hint">相差不超过这个数，就算同一张</div></div>
       <div class="fld"><label>时间偏移（秒）</label><input type="number" id="offset" value="0" step="1"><div class="hint">两台相机时间不一致时填：JPG 时间 + 偏移 ≈ RAW 时间</div></div>
     </div>
-    <div class="fld"><label>画面差异阈值（默认 40，越小越严）</label><input type="number" id="img-tol" value="40" min="0" max="256" step="1"><div class="hint">超过这个值会标「需确认」。大幅裁切、倾斜时算法可能认不出，请在核对台里人工判断或手动改配。</div></div>
+    <div class="fld"><label>画面差异阈值（默认 70，越小越严）</label><input type="number" id="img-tol" value="70" min="0" max="256" step="1"><div class="hint">同一张照片（JPG 对 RAW 内嵌预览）一般在 30～60；颜色、亮度调得不一样的也在 70 以内。不同照片通常 90 以上。超过这个值会标「需确认」。大幅裁切、倾斜时算法可能认不出，请在核对台里人工判断或手动改配。</div></div>
     <details>
       <summary>匹配规则说明</summary>
       <p class="steps-txt">① 文件名相同 → 直接匹配。② JPG 名里包含 RAW 编号 → 匹配。③ 都不行时，读取拍摄时间，在容差内找最近的 RAW；连拍时每张 RAW 只配给一张 JPG，并标「需确认」。④ 名字相同但拍摄时间对不上，也会匹配，但标「需确认」，防止多台相机文件名重复时配错。⑤ 开启画面对照后，所有配对都会再用画面核对一遍。<br>支持 CR2/CR3、NEF、ARW、RAF、ORF、RW2、DNG、PEF 等常见 RAW。</p>
@@ -573,7 +573,9 @@ function fmtSec(ms){
    两张图统一用 imageOrientation:'none' 解码，避免 EXIF 方向标记只把一侧转 90 度。
    本模块自包含；关掉「画面对照」开关后，页面行为与旧版完全一致。 */
 const IMG = (function () {
-  const CFG = { rawSteps: [524288, 2 * 1024 * 1024, 8 * 1024 * 1024], readCap: 8 * 1024 * 1024, W: 17, H: 16, defTh: 40, NMODE: 8 };
+  // 画面差异阈值默认 70：实测同一张照片（JPG 对 RAW 内嵌预览）距离在 40～55，
+  // 不同照片在 94 以上；原来定 40 会把「同一张但颜色/亮度不一样」全部误判成不符。
+  const CFG = { rawSteps: [524288, 2 * 1024 * 1024, 8 * 1024 * 1024], readCap: 8 * 1024 * 1024, W: 17, H: 16, defTh: 70, NMODE: 8 };
   // D4 完整 8 种（4 旋转 x 2 镜像）。只做 6 种会漏掉「旋转 90 + 翻转」，
   // 浏览器对带 EXIF 方向的 JPG 解码后恰好常落在这两种里（headless 实测 3/4 找不到）。
   const MODE_NAME = ['原方向', '左右翻转', '上下翻转', '转 180', '转 90 A', '转 90 B', '斜向翻转 A', '斜向翻转 B'];
