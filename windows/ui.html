@@ -1658,10 +1658,13 @@ if(window.__RAW_NATIVE__){
     const z={raw:zoneRect('zone-raw'),jpg:zoneRect('zone-jpg')};
     /* 接收区 = 顶栏以下的整个窗口，不是只盖两个方框：
        拖到方框边框、标题、两侧留白都由系统直接给真实路径，体感与网页版「整页可放」一致。
+       四周留 20px 感知带交给网页：从任何方向拖进来必先触发 dragenter，
+       网页版那层淡黄大框才能按时出现（整页盖死会让网页收不到拖拽事件）。
        能点的控件逐个挖空，其余像素保持极淡透明但接得住拖放。 */
     const bar=document.querySelector('.top');
     const top=Math.round((bar?bar.getBoundingClientRect().bottom:0)*dp);
-    const card=[0,top,Math.round(window.innerWidth*dp),Math.round(window.innerHeight*dp)];
+    const pad=Math.round(20*dp);
+    const card=[pad,top+pad,Math.round(window.innerWidth*dp)-pad,Math.round(window.innerHeight*dp)-pad];
     const holes=['openSettings','st1','st2','st3','modeSeg','startBtn','goSettings']
       .concat(pickBtns.map(b=>b.id)).map(zoneRect).filter(Boolean);
     const k=JSON.stringify([z,card,holes]);
@@ -1674,62 +1677,43 @@ if(window.__RAW_NATIVE__){
   window.addEventListener('scroll',()=>{lastZones='';reportZones();},true);
   setInterval(reportZones,1200);
 
-  /* ---- 常驻的黄色虚线大识别框 ----
-     接收区扩到整页后网页几乎收不到 dragenter，只靠「拖入才出现」的框不可靠。
-     所以第 1 步常驻一圈黄色虚线大框：打开软件就知道往哪拖、可以松手。
-     拖进来时切到「激活态」：边框变亮、中间显示「松开鼠标…」提示。
-     结果页自动撤掉，不干扰核对/导出。 */
+  /* ---- 拖入时的全屏大识别框：与网页版完全同款 ----
+     网页版实测（overlay_probe.py）：拖入前 hidden；拖入时整屏淡黄遮罩
+     rgba(240,166,75,.1) + 3px 橙色虚线框 + 中间「松开鼠标，自动识别…」；
+     拖出/松手后 hidden。这里不注入任何 CSS，直接用主体原样式。
+     原生拖拽层会接管中间那一片，所以：
+       ① 从四周感知带拖进来时网页收到 dragenter → 显示；
+       ② 鼠标移进原生层时浏览器发 dragleave —— 拦下来，别让主体提前藏掉；
+       ③ 真正拖出窗口、松手落到原生层（/api/dropped）、落到网页别处时隐藏；
+       ④ 4 秒无事件兜底隐藏，防止残留。 */
   const overlay=$('dropOverlay');
-  const idleCss=document.createElement('style');
-  idleCss.textContent=
-    '#dropOverlay[data-idle]{background:rgba(240,166,75,.035);border-color:rgba(240,166,75,.55)}'
-    +'#dropOverlay[data-idle]>div{display:none}';
-  document.head.appendChild(idleCss);
   let lastDrag=0;
-  function syncIdle(){
-    if(state.view==='setup'){
-      overlay.hidden=false;
-      if(!overlay.dataset.dragging)overlay.dataset.idle='1';
-    }else{
-      overlay.hidden=true;
-      overlay.removeAttribute('data-idle');
-      overlay.removeAttribute('data-dragging');
-    }
-  }
   const showOverlay=()=>{
     if(state.view!=='setup')return;
     overlay.hidden=false;
-    overlay.removeAttribute('data-idle');
-    overlay.dataset.dragging='1';
     lastDrag=Date.now();
   };
-  const hideOverlay=()=>{
-    lastDrag=0;
-    overlay.removeAttribute('data-dragging');
-    syncIdle();
-  };
+  const hideOverlay=()=>{overlay.hidden=true;lastDrag=0;};
   document.addEventListener('dragenter',e=>{if(hasFiles(e))showOverlay();},true);
   document.addEventListener('dragover',e=>{
     if(!hasFiles(e))return;
     lastDrag=Date.now();
-    if(!overlay.dataset.dragging)showOverlay();
+    if(overlay.hidden)showOverlay();
   },true);
   document.addEventListener('dragleave',e=>{
     if(!hasFiles(e))return;
-    /* 主体的 dragleave 会直接 hidden=true，把常驻框整个藏掉，一律拦下来；
-       状态只由这里的 dragging/idle 管理。 */
+    /* 主体 dragleave 会直接 hidden=true；一律拦下，只有真正离开窗口才收起 */
     e.stopPropagation();
     const out=!e.relatedTarget&&(e.clientX<=0||e.clientY<=0||
       e.clientX>=window.innerWidth||e.clientY>=window.innerHeight);
-    if(out)hideOverlay();   /* 真正拖出窗口 → 回到常驻虚线框 */
+    if(out)hideOverlay();
   },true);
   document.addEventListener('drop',()=>{hideOverlay();},true);
   setInterval(()=>{
-    if(overlay.dataset.dragging&&lastDrag&&Date.now()-lastDrag>4000)hideOverlay();
+    if(!overlay.hidden&&lastDrag&&Date.now()-lastDrag>4000)hideOverlay();
   },400);
   const origSetView=setView;
-  setView=function(v){origSetView(v);syncIdle();};
-  syncIdle();
+  setView=function(v){origSetView(v);if(v!=='setup')hideOverlay();};
 
   const candCounts=c=>{const t=[];if(c.raw)t.push(c.raw+' 个 RAW');if(c.jpg)t.push(c.jpg+' 张 JPG');return t.length?t.join(' · '):'没数到照片';};
   async function applyNativeDrops(items){
