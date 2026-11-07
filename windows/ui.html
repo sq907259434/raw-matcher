@@ -1613,13 +1613,28 @@ if(window.__RAW_NATIVE__){
   }
   let lastZones='';
   function reportZones(){
+    const dp=window.devicePixelRatio||1;
+    /* 设置抽屉 / 导出弹窗 / 灯箱打开时让出整块屏幕，里面的控件才能点 */
+    const modal=['drawerOv','exportOv','lb'].some(id=>{const el=$(id);return el&&!el.hidden;});
+    if(state.view!=='setup'||modal){
+      if(lastZones==='off')return;
+      lastZones='off';
+      apiJ('zones',{rects:{},card:null,holes:[],dpr:dp,vh:window.innerHeight}).catch(()=>{});
+      return;
+    }
     const z={raw:zoneRect('zone-raw'),jpg:zoneRect('zone-jpg')};
-    const card=zoneRect('zones');
-    const holes=pickBtns.map(b=>zoneRect(b.id)).filter(Boolean);
+    /* 接收区 = 顶栏以下的整个窗口，不是只盖两个方框：
+       拖到方框边框、标题、两侧留白都由系统直接给真实路径，体感与网页版「整页可放」一致。
+       能点的控件逐个挖空，其余像素保持极淡透明但接得住拖放。 */
+    const bar=document.querySelector('.top');
+    const top=Math.round((bar?bar.getBoundingClientRect().bottom:0)*dp);
+    const card=[0,top,Math.round(window.innerWidth*dp),Math.round(window.innerHeight*dp)];
+    const holes=['openSettings','st1','st2','st3','modeSeg','startBtn','goSettings']
+      .concat(pickBtns.map(b=>b.id)).map(zoneRect).filter(Boolean);
     const k=JSON.stringify([z,card,holes]);
     if(k===lastZones)return;
     lastZones=k;
-    apiJ('zones',{rects:z,card:card,holes:holes,dpr:window.devicePixelRatio||1,vh:window.innerHeight}).catch(()=>{});
+    apiJ('zones',{rects:z,card:card,holes:holes,dpr:dp,vh:window.innerHeight}).catch(()=>{});
   }
   reportZones();
   window.addEventListener('resize',()=>{lastZones='';reportZones();});
@@ -1699,11 +1714,36 @@ if(window.__RAW_NATIVE__){
   },300);
 
   /* 落到原生接收区以外的拖放，浏览器拿不到真实路径，宁可让重拖也不猜 */
+  /* 落到原生接收区以外（顶栏、挖空的控件）时，先试着从 dataTransfer 里
+     把资源管理器给的真实路径抢出来，能抢到就照常识别；抢不到就安静放过，
+     不再弹「请拖到两个方框里」那种网页版没有的警告。 */
+  function pathsFromDrop(e){
+    const out=[];
+    const push=s=>{
+      s=String(s||'').trim();
+      if(!s||s.startsWith('#'))return;
+      if(s.startsWith('file:///')){
+        let p=s.slice(8);
+        try{p=decodeURIComponent(p);}catch(_){}
+        p=p.replace(/\//g,'\\');
+        if(/^[A-Za-z]:/.test(p))out.push(p);
+      }else if(/^[A-Za-z]:[\\\/]/.test(s)){
+        out.push(s.replace(/\//g,'\\'));
+      }
+    };
+    if(!e.dataTransfer)return out;
+    for(const t of ['text/uri-list','text/plain','text/x-moz-url','application/x-moz-file']){
+      let v='';try{v=e.dataTransfer.getData(t)||'';}catch(_){v='';}
+      if(v)v.split(/\r?\n/).forEach(push);
+    }
+    return [...new Set(out)];
+  }
   onDrop=async function(e){
     e.preventDefault();e.stopPropagation();
-    dragN=0;$('dropOverlay').hidden=true;
+    dragN=0;hideOverlay();
     ['zone-raw','zone-jpg'].forEach(i=>dragHL(i,false));
-    note('请把文件夹拖到上面两个方框里（两个一起拖也行）——那里才能拿到硬盘上的真实位置。',true);
+    const paths=pathsFromDrop(e);
+    if(paths.length)await applyNativeDrops(paths.map(p=>({path:p,slot:''})));
   };
   /* ---- 保存清单：走系统「另存为」 ---- */
   download=function(name,text){
@@ -1783,8 +1823,16 @@ if(window.__RAW_NATIVE__){
   $('pickOut').disabled=false;
   document.querySelector('.brand b').textContent='RAW 选片 · 桌面版';
   document.title='RAW 选片工具';
-  const hint=$('startHint').firstChild;
-  if(hint)hint.textContent='把文件夹拖进上面两个方框（两个一起拖也行），或点方框里的「选择…」。路径按硬盘真实位置算。';
+  /* 主体每次选完文件夹都会用 refreshStart 重写这行提示，所以覆写它，
+     让桌面版一直显示「真实路径」口径，而不是被改回网页版默认文案。 */
+  const origRefreshStart=refreshStart;
+  refreshStart=function(){
+    origRefreshStart();
+    const h=$('startHint').firstChild;
+    if(h)h.textContent=$('startBtn').disabled
+      ? '把文件夹拖进上面两个方框（两个一起拖也行），或点方框里的「选择…」。路径按硬盘真实位置算。'
+      : '准备好了。先按文件名匹配，对不上再用拍摄时间和画面对照；路径按硬盘真实位置算。';
+  };
   try{
     const lk=document.createElement('link');lk.rel='icon';lk.type='image/svg+xml';
     lk.href='data:image/svg+xml,'+encodeURIComponent(
@@ -1796,7 +1844,7 @@ if(window.__RAW_NATIVE__){
   const beat=()=>fetch('/api/heartbeat',{method:'POST'}).catch(()=>{});
   beat();setInterval(beat,3000);
 
-  refreshOutPath();updateExportCount();reportZones();
+  refreshStart();refreshOutPath();updateExportCount();reportZones();
 }
 /* ==== DESKTOP_BRIDGE_END ==== */
 </script>
